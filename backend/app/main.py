@@ -35,7 +35,10 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.services.alignment import (
+    Aligner,
     AlignmentResult,
+    AlignmentUnavailableError,
+    WhisperXAligner,
     detect_language,
     profile_for,
     score_utterance,
@@ -53,6 +56,28 @@ SAMPLE_RATE_HZ = 16_000
 PCM_FRAME_BYTES = SAMPLE_RATE_HZ * FRAME_MS // 1000 * 2
 
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "data" / "sessions"
+
+# Day 3: the aligner used to score finished utterances. None in local
+# dev (no GPU / WhisperX stack here) — the score payload then says so
+# explicitly ("alignment": "unavailable") instead of returning empty
+# units as if alignment had run. Set it in production / on a GPU worker,
+# e.g. `main.ALIGNER = WhisperXAligner(model_size="base", device="cuda")`,
+# or via SHADOWTALK_ALIGNER=whisperx (see default_aligner below).
+ALIGNER: Aligner | None = None
+
+
+def default_aligner() -> Aligner | None:
+    """Build the aligner from the environment, or None in local dev."""
+    import os
+
+    if os.environ.get("SHADOWTALK_ALIGNER") != "whisperx":
+        return None
+    if not WhisperXAligner.available():
+        return None
+    return WhisperXAligner(
+        model_size=os.environ.get("SHADOWTALK_WHISPER_MODEL", "tiny"),
+        device=os.environ.get("SHADOWTALK_DEVICE", "cpu"),
+    )
 
 
 @app.get("/health")
@@ -166,19 +191,34 @@ async def _finish_session(websocket: WebSocket, session: UtteranceSession) -> No
     await websocket.send_json(await _score_session(session, wav_name))
 
 
-async def _score_session(session: UtteranceSession, wav_name: str | None = None) -> dict:
+async def _score_session(
+    session: UtteranceSession, wav_name: str | None = None
+) -> dict:
     """Run alignment + scoring for a finished utterance.
 
-    Stub wiring: the GPU worker returns WhisperX alignments for both
-    the learner audio and the canonical reference; scoring is relative
-    to the reference alignment (see services/alignment.py).
+    The learner utterance is aligned with the configured aligner when
+    one is set (Day 3 wiring); the canonical reference alignment is
+    still Day 4, so scoring is currently against an empty reference —
+    speaking-rate normalisation is skipped in that case (see
+    services/alignment.py) and GOP comes from the learner units alone.
     """
     language = detect_language(session.pcm, hint=session.language_hint)
     profile = profile_for(language)
 
-    # TODO(worker): replace empty alignments with WhisperXAligner output
-    # for learner audio and for the reference_id's canonical recording.
+    aligner = ALIGNER
+    alignment_status = "unavailable"
     learner = AlignmentResult(language=language, transcript="", units=[])
+    if aligner is not None:
+        try:
+            learner = aligner.align(session.pcm, language)
+            alignment_status = "ok"
+        except AlignmentUnavailableError:
+            alignment_status = "unavailable"
+        except Exception:
+            alignment_status = "error"
+
+    # TODO(Day 4): replace the empty reference with a WhisperX alignment
+    # of the reference_id's canonical recording.
     reference = AlignmentResult(language=language, transcript="", units=[])
     result = score_utterance(learner, reference)
 
@@ -188,6 +228,9 @@ async def _score_session(session: UtteranceSession, wav_name: str | None = None)
         "session_id": session.session_id,
         "language": language.value,
         "alignment_unit": profile.unit.value,
+        "alignment": alignment_status,
+        "alignment_backend": getattr(aligner, "name", None) if aligner else None,
+        "transcript": learner.transcript,
         "reference_id": session.reference_id,
         "frames_received": session.frame_count,
         "utterance_wav": wav_name,

@@ -87,8 +87,13 @@ One sentence, end to end:
 
 - [x] iOS: record one sentence (16 kHz mono, 20 ms frames, streamed live)
       — Day 2, 2026-11-20; VAD endpointing + utterance WAV saving included
-- [ ] Backend: receive stream, VAD endpointing, forced alignment completes
-      with **sub-300 ms post-utterance feedback**
+- [~] Backend: receive stream, VAD endpointing, forced alignment completes
+      with **sub-300 ms post-utterance feedback** — Day 3 wiring done
+      2026-11-20 (`WhisperXAligner` + score payload returns real units
+      when an aligner is configured); the model itself has not run yet
+      (no GPU / WhisperX stack on this machine, no real spoken sentence),
+      and per-phoneme timestamps still need the wav2vec2 phoneme head
+      (Day 4)
 - [ ] Scoring: per-unit GOP score + pitch-contour comparison vs. reference
 - [ ] No audio-thread crashes across iOS audio-session interruptions
       (calls, route changes, headphone unplug)

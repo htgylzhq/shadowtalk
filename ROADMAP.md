@@ -24,10 +24,32 @@ that proves it.
   Xcode before running on device. Scoring itself is still the Day 1
   stub (empty alignments); real WhisperX scoring is Day 3–5.
 
-## Day 3 — Alignment for one sentence
-- faster-whisper transcription of a single recorded sentence
-- wav2vec2 forced alignment → per-phoneme timestamps as JSON
+## Day 3 — Alignment for one sentence (wiring done, 2026-11-20)
+- `WhisperXAligner` implemented with lazy imports: faster-whisper ASR
+  (word timestamps) + `whisperx.load_align_model` / `whisperx.align`
+  using the language-specific XLS-R head; raises
+  `AlignmentUnavailableError` when the stack is not installed.
+- Wired into `WS /ws/align`: `_score_session` uses `main.ALIGNER`
+  when set (or `SHADOWTALK_ALIGNER=whisperx` via `default_aligner`);
+  the score payload now carries `alignment` (`ok` / `unavailable` /
+  `error`), `alignment_backend` and `transcript`, and returns real
+  per-unit GOP scores when an aligner is present. With no aligner
+  (local dev) it says `unavailable` explicitly instead of returning
+  empty units as if alignment had run.
+- Fixed: `speaking_rate_normalise` no longer scales learner units by
+  a bogus ratio when the reference alignment is still empty (Day 4).
 - Commit: `feat(align): whisperx pipeline, phoneme timestamps endpoint`
+- Verified: 14 tests pass (8 Day 2 + 6 new in `tests/test_alignment.py`),
+  including a fake-aligner WS end-to-end test (Japanese mora units,
+  low-confidence unit gated, never scored as an error).
+- **Not yet done — do not call Day 3 finished:** WhisperX itself has
+  NOT been run here (no torch / faster-whisper / whisperx installed,
+  no GPU, no real spoken sentence to transcribe). WhisperX returns
+  word-level timestamps; per-phoneme / per-mora timestamps need the
+  wav2vec2 phoneme CTC head, which moves to Day 4. The remaining Day 3
+  step is: run `WhisperXAligner` on a GPU worker (or `SHADOWTALK_ALIGNER`
+  =whisperx) against one real recorded sentence and confirm the word
+  timestamps land in the score payload.
 
 ## Day 4 — Relative scoring vs reference
 - Forced alignment of the canonical reference recording

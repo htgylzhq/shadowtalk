@@ -12,8 +12,12 @@ the API process can run without them in local development.
 
 from __future__ import annotations
 
+import tempfile
+import wave
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
+from typing import Protocol
 
 
 class Language(str, Enum):
@@ -56,6 +60,24 @@ LANGUAGE_PROFILES: dict[Language, LanguageProfile] = {
         xlsr_model="wav2vec2-xls-r-zh",
     ),
 }
+
+
+class AlignmentUnavailableError(RuntimeError):
+    """Raised when the WhisperX stack is not installed / not loadable.
+
+    The API process runs without the heavy ML stack in local dev (see
+    requirements.txt: faster-whisper / whisperx are GPU-worker deps).
+    Callers must surface this as an explicit "unavailable" status,
+    never as silently empty alignments.
+    """
+
+
+class Aligner(Protocol):
+    """Anything that can turn 16 kHz mono PCM into aligned units."""
+
+    name: str
+
+    def align(self, pcm16k: bytes, language: Language) -> AlignmentResult: ...
 
 
 @dataclass
@@ -109,15 +131,116 @@ def profile_for(language: Language) -> LanguageProfile:
 class WhisperXAligner:
     """Forced alignment via the WhisperX pipeline on a GPU worker.
 
-    Steps: faster-whisper ASR -> wav2vec2 forced alignment using the
-    language-specific XLS-R head from LANGUAGE_PROFILES.
+    Steps: faster-whisper ASR (word timestamps on) -> whisperx
+    ``load_align_model`` with the language-specific XLS-R head from
+    LANGUAGE_PROFILES -> ``whisperx.align`` -> word-level segments.
+
+    Honest scope note (Day 3, 2026-11-20): WhisperX returns
+    **word-level** timestamps. Splitting words into per-phoneme /
+    per-mora units needs the wav2vec2 phoneme CTC head, which is Day 4
+    work — so ``align()`` labels units with words for now, and the
+    roadmap says so. Do not present word timestamps as phoneme
+    timestamps.
+
+    Heavy imports live inside :meth:`_load` so the API process starts
+    without torch / faster-whisper / whisperx installed. When they are
+    missing, :meth:`align` raises :class:`AlignmentUnavailableError`.
     """
 
-    def align(self, pcm16k: bytes, language: Language) -> AlignmentResult:
-        raise NotImplementedError(
-            "WhisperXAligner runs on the GPU worker; "
-            "wire up faster-whisper + wav2vec2 here."
+    name = "whisperx"
+
+    def __init__(
+        self,
+        model_size: str = "tiny",
+        device: str | None = None,
+        compute_type: str = "int8",
+    ) -> None:
+        self.model_size = model_size
+        self.device = device or "cpu"
+        self.compute_type = compute_type
+        self._asr_model: object | None = None
+        self._align_model: object | None = None
+        self._align_metadata: object | None = None
+
+    @staticmethod
+    def available() -> bool:
+        """True when the WhisperX stack imports in this process."""
+        try:
+            import faster_whisper  # noqa: F401, PLC0415
+            import whisperx  # noqa: F401, PLC0415
+        except Exception:
+            return False
+        return True
+
+    def _load(self) -> None:
+        if self._asr_model is not None:
+            return
+        try:
+            from faster_whisper import WhisperModel  # noqa: PLC0415
+            import whisperx  # noqa: PLC0415
+        except Exception as exc:  # missing deps, no GPU, bad install, ...
+            raise AlignmentUnavailableError(
+                "WhisperX stack not available in this process: "
+                "install faster-whisper + whisperx (+ torch) on a GPU "
+                f"worker. Underlying error: {exc}"
+            ) from exc
+        self._asr_model = WhisperModel(
+            self.model_size, device=self.device, compute_type=self.compute_type
         )
+        self._whisperx = whisperx  # type: ignore[attr-defined]
+
+    def align(self, pcm16k: bytes, language: Language) -> AlignmentResult:
+        if not pcm16k:
+            return AlignmentResult(language=language, transcript="", units=[])
+        self._load()
+        assert self._asr_model is not None
+        whisperx = self._whisperx  # type: ignore[attr-defined]
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            wav_path = Path(tmp.name)
+        try:
+            with wave.open(str(wav_path), "wb") as wav:
+                wav.setnchannels(1)
+                wav.setsampwidth(2)
+                wav.setframerate(16_000)
+                wav.writeframes(pcm16k)
+
+            segments, _info = self._asr_model.transcribe(  # type: ignore[union-attr]
+                str(wav_path), language=language.value, word_timestamps=True
+            )
+            segments = list(segments)
+            transcript = " ".join(s.text.strip() for s in segments).strip()
+
+            if self._align_model is None:
+                self._align_model, self._align_metadata = whisperx.load_align_model(
+                    language_code=language.value, device=self.device
+                )
+            aligned = whisperx.align(
+                [
+                    {"text": s.text, "start": s.start, "end": s.end}
+                    for s in segments
+                ],
+                self._align_model,
+                self._align_metadata,
+                str(wav_path),
+                self.device,
+            )
+            units: list[AlignedUnit] = []
+            for segment in aligned.get("segments", []):
+                for word in segment.get("words", []):
+                    if "start" not in word or "end" not in word:
+                        continue
+                    units.append(
+                        AlignedUnit(
+                            label=str(word["word"]).strip(),
+                            start_s=float(word["start"]),
+                            end_s=float(word["end"]),
+                            ctc_confidence=float(word.get("score", 1.0)),
+                        )
+                    )
+            return AlignmentResult(language=language, transcript=transcript, units=units)
+        finally:
+            wav_path.unlink(missing_ok=True)
 
 
 class PitchScorer:
@@ -155,7 +278,13 @@ def gop_from_ctc_posteriors(unit: AlignedUnit) -> float:
 def speaking_rate_normalise(
     units: list[AlignedUnit], reference_units: list[AlignedUnit]
 ) -> list[AlignedUnit]:
-    """Scale unit durations by the learner/reference total-duration ratio."""
+    """Scale unit durations by the learner/reference total-duration ratio.
+
+    No reference yet (Day 4 wires the reference recording in): return
+    the learner units unchanged instead of scaling by a bogus ratio.
+    """
+    if not units or not reference_units:
+        return list(units)
     learner_total = sum(u.end_s - u.start_s for u in units) or 1.0
     reference_total = sum(u.end_s - u.start_s for u in reference_units) or 1.0
     ratio = reference_total / learner_total
