@@ -11,10 +11,18 @@ that proves it.
 - `ios/`: SwiftUI recorder — AVAudioSession `.playAndRecord`,
   AVAudioEngine tap, 16 kHz mono PCM, 20 ms frames via `onFrame`
 
-## Day 2 — Audio pipeline end to end
+## Day 2 — Audio pipeline end to end (done, 2026-11-20)
 - iOS recorder streams frames over WebSocket to the backend session
-- Silero VAD endpointing on the server; utterance saved per session
+  (`ios/ShadowTalk/AlignSocket.swift`, wired in `RecorderViewModel`)
+- Silero VAD endpointing on the server, with an energy-VAD fallback
+  when torch/Silero is unavailable (`backend/app/services/vad.py`);
+  utterance saved per session as WAV under `backend/data/sessions/`
 - Commit: `feat(audio): stream recorder frames, VAD endpointing`
+- Verified: 8 tests pass (`backend/tests/test_vad.py`), including a
+  WebSocket end-to-end test; `/health` returns ok on uvicorn.
+  Note: Swift was not compiled here (no Xcode on Linux) — build in
+  Xcode before running on device. Scoring itself is still the Day 1
+  stub (empty alignments); real WhisperX scoring is Day 3–5.
 
 ## Day 3 — Alignment for one sentence
 - faster-whisper transcription of a single recorded sentence

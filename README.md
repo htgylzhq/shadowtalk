@@ -28,14 +28,16 @@ and be scored on your own voice against the canonical reference recording.
   latency and audio-session crashes come from.
 - `AVAudioSession` in `.playAndRecord` mode, `AVAudioEngine` input tap,
   capture converted to **16 kHz mono PCM**, chunked into 20 ms frames and
-  streamed over a WebSocket.
+  streamed over a WebSocket (`AlignSocket.swift` → `/ws/align`).
 
 ### Backend (`backend/`)
 
 - **FastAPI + Postgres + Redis**, with GPU workers for the alignment
   pipeline.
 - WebSocket ingestion of 20 ms Opus frames; **Silero VAD** for endpointing
-  (deciding when an utterance has ended).
+  (deciding when an utterance has ended), with an energy-VAD fallback
+  when Silero/torch is unavailable. Each finished utterance is saved
+  as a WAV under `backend/data/sessions/`.
 - Alignment pipeline (**WhisperX**):
   - `faster-whisper` for ASR,
   - **wav2vec2 forced alignment** for phoneme boundaries,
@@ -83,7 +85,8 @@ shadowtalk/
 
 One sentence, end to end:
 
-- [ ] iOS: record one sentence (16 kHz mono, 20 ms frames, streamed live)
+- [x] iOS: record one sentence (16 kHz mono, 20 ms frames, streamed live)
+      — Day 2, 2026-11-20; VAD endpointing + utterance WAV saving included
 - [ ] Backend: receive stream, VAD endpointing, forced alignment completes
       with **sub-300 ms post-utterance feedback**
 - [ ] Scoring: per-unit GOP score + pitch-contour comparison vs. reference

@@ -21,6 +21,28 @@ final class RecorderViewModel: ObservableObject {
     /// these to the backend WebSocket as Opus frames.
     var onFrame: ((Data) -> Void)?
 
+    /// Day 2 transport: streams frames to /ws/align and receives the
+    /// VAD endpoint + score. Defaults to the local backend.
+    private let socket = AlignSocket()
+    var language = "ja"
+    var referenceId: String?
+    @Published private(set) var connectionState = "未连接"
+
+    init() {
+        socket.onScore = { [weak self] gop in
+            Task { @MainActor in self?.lastScore = gop }
+        }
+        socket.onEndpoint = { [weak self] _ in
+            // VAD decided the utterance ended; the score follows.
+            Task { @MainActor in self?.stopEngineOnly() }
+        }
+        socket.onStateChange = { [weak self] state in
+            Task { @MainActor in self?.connectionState = state.rawValue }
+        }
+        // Forward every recorder frame to the backend as it arrives.
+        onFrame = { [weak self] data in self?.socket.sendFrame(data) }
+    }
+
     private static let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
         sampleRate: 16_000,
@@ -29,6 +51,8 @@ final class RecorderViewModel: ObservableObject {
     )!
 
     func start() {
+        socket.connect()
+        socket.sendStart(language: language, referenceId: referenceId)
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .spokenAudio,
@@ -59,12 +83,17 @@ final class RecorderViewModel: ObservableObject {
     }
 
     func stop() {
+        socket.sendEnd()
+        stopEngineOnly()
+    }
+
+    /// Stops capture without sending another "end" (used when the
+    /// server already endpointed the utterance via VAD).
+    private func stopEngineOnly() {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         try? AVAudioSession.sharedInstance().setActive(false)
         isRecording = false
-        // Transport layer sends {"type": "end"} here; the backend replies
-        // with the score (target: < 300 ms post-utterance).
     }
 
     private func convertAndEmit(_ buffer: AVAudioPCMBuffer) {

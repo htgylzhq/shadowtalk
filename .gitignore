@@ -10,6 +10,7 @@ venv/
 # Backend runtime
 *.log
 uploads/
+backend/data/
 
 # Swift / Xcode
 build/

@@ -22,6 +22,10 @@ struct ContentView: View {
                 Text("Score: \(score, specifier: "%.2f")")
                     .font(.headline)
             }
+
+            Text("连接：\(recorder.connectionState)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .padding()
     }
