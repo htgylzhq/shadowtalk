@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+
+# Backend runtime
+*.log
+uploads/
+
+# Swift / Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.hmap
+*.ipa
+.swiftpm/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,14 @@
+# API / streaming layer
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+websockets>=12.0
+redis>=5.0
+psycopg[binary]>=3.1
+
+# Alignment workers (GPU hosts only; imported lazily by the API process)
+faster-whisper>=1.0
+whisperx>=3.1
+torchcrepe>=0.0.20
+librosa>=0.10
+# Silero VAD is loaded via torch.hub or the silero-vad package on workers.
