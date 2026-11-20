@@ -102,6 +102,11 @@ class UnitScore:
     label: str
     gop: float | None  # None when confidence-gated: never score a guess
     flagged: bool = False
+    # Learner duration / reference duration after speaking-rate
+    # normalisation (1.0 = same rhythm as the reference). None when
+    # there is no paired reference unit (Day 4: no reference yet).
+    duration_ratio: float | None = None
+    reference_confidence: float | None = None
 
 
 @dataclass
@@ -109,6 +114,10 @@ class ScoreResult:
     units: list[UnitScore]
     overall_gop: float | None
     pitch_dtw_distance: float | None
+    # DTW distance between the rate-normalised learner unit durations
+    # and the reference unit durations (seconds per unit, averaged).
+    # None when there is no reference to compare against.
+    duration_dtw_distance: float | None = None
 
 
 def detect_language(audio: bytes, hint: str | None = None) -> Language:
@@ -280,8 +289,9 @@ def speaking_rate_normalise(
 ) -> list[AlignedUnit]:
     """Scale unit durations by the learner/reference total-duration ratio.
 
-    No reference yet (Day 4 wires the reference recording in): return
-    the learner units unchanged instead of scaling by a bogus ratio.
+    Day 4: the reference is now wired in (see services/reference.py
+    and main._score_session). With no reference, return the learner
+    units unchanged instead of scaling by a bogus ratio.
     """
     if not units or not reference_units:
         return list(units)
@@ -294,23 +304,94 @@ def speaking_rate_normalise(
     ]
 
 
+def dtw_duration_distance(
+    learner_durations: list[float], reference_durations: list[float]
+) -> float | None:
+    """DTW distance between two unit-duration sequences.
+
+    Classic dynamic time warping with |a - b| as the per-step cost,
+    normalised by the longer sequence length so the result is in
+    seconds-per-unit and comparable across sentences. Returns None
+    when either sequence is empty. Used for rhythm: after speaking-
+    rate normalisation the totals already match, so a large distance
+    means the learner stretched some units and rushed others relative
+    to the reference, even at the same overall speed.
+    """
+    if not learner_durations or not reference_durations:
+        return None
+    n, m = len(learner_durations), len(reference_durations)
+    inf = float("inf")
+    prev = [inf] * (m + 1)
+    prev[0] = 0.0
+    for i in range(1, n + 1):
+        cur = [inf] * (m + 1)
+        for j in range(1, m + 1):
+            cost = abs(learner_durations[i - 1] - reference_durations[j - 1])
+            cur[j] = cost + min(prev[j], cur[j - 1], prev[j - 1])
+        prev = cur
+    return prev[m] / max(n, m)
+
+
 def score_utterance(
     learner: AlignmentResult,
     reference: AlignmentResult,
     pitch_distance: float | None = None,
 ) -> ScoreResult:
-    """Score a learner utterance against its canonical reference alignment."""
+    """Score a learner utterance against its canonical reference alignment.
+
+    Relative scoring (Day 4): units are paired by position with the
+    reference units, after speaking-rate normalisation. A unit is
+    gated — flagged, gop None, never scored as a learner error — when
+    *its own* CTC confidence is below the gate, *or* when the paired
+    reference unit is below the gate: a boundary the model cannot
+    place reliably on the reference cannot be blamed on the learner
+    (model bias cancels). ``duration_ratio`` reports the rhythm
+    comparison separately from pronunciation, so a slow-but-correct
+    unit is not misread as mispronounced.
+    """
     normalised = speaking_rate_normalise(learner.units, reference.units)
     unit_scores: list[UnitScore] = []
     scored: list[float] = []
-    for unit in normalised:
-        if unit.ctc_confidence < CONFIDENCE_GATE:
-            unit_scores.append(UnitScore(label=unit.label, gop=None, flagged=True))
+    for i, unit in enumerate(normalised):
+        ref = reference.units[i] if i < len(reference.units) else None
+        ref_duration = (ref.end_s - ref.start_s) if ref else None
+        duration_ratio = None
+        if ref_duration:
+            duration_ratio = (unit.end_s - unit.start_s) / ref_duration
+        ref_conf = ref.ctc_confidence if ref else None
+        if unit.ctc_confidence < CONFIDENCE_GATE or (
+            ref_conf is not None and ref_conf < CONFIDENCE_GATE
+        ):
+            unit_scores.append(
+                UnitScore(
+                    label=unit.label,
+                    gop=None,
+                    flagged=True,
+                    duration_ratio=duration_ratio,
+                    reference_confidence=ref_conf,
+                )
+            )
             continue
         gop = gop_from_ctc_posteriors(unit)
         scored.append(gop)
-        unit_scores.append(UnitScore(label=unit.label, gop=gop))
+        unit_scores.append(
+            UnitScore(
+                label=unit.label,
+                gop=gop,
+                duration_ratio=duration_ratio,
+                reference_confidence=ref_conf,
+            )
+        )
     overall = sum(scored) / len(scored) if scored else None
+    duration_dtw = None
+    if reference.units:
+        duration_dtw = dtw_duration_distance(
+            [u.end_s - u.start_s for u in normalised],
+            [u.end_s - u.start_s for u in reference.units],
+        )
     return ScoreResult(
-        units=unit_scores, overall_gop=overall, pitch_dtw_distance=pitch_distance
+        units=unit_scores,
+        overall_gop=overall,
+        pitch_dtw_distance=pitch_distance,
+        duration_dtw_distance=duration_dtw,
     )

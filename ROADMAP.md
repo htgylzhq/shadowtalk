@@ -51,13 +51,40 @@ that proves it.
   =whisperx) against one real recorded sentence and confirm the word
   timestamps land in the score payload.
 
-## Day 4 — Relative scoring vs reference
-- Forced alignment of the canonical reference recording
-- Learner scored relative to reference (model bias cancels)
-- Speaking-rate normalisation + DTW duration comparison
-- Per-phoneme CTC confidence gating: low-confidence units flagged,
-  never scored as errors
+## Day 4 — Relative scoring vs reference (done, 2026-11-20)
+- `ReferenceStore` (`backend/app/services/reference.py`): a reference
+  recording is aligned once through the same aligner as the learner
+  and cached by `reference_id`; later attempts reuse it (proven by a
+  counting-aligner test: 1 align call for 2 lookups). Reference WAVs
+  load from `backend/data/references/<id>.wav` (16 kHz mono PCM16,
+  validated, never committed) or are registered in memory.
+- Learner scored relative to the reference (`score_utterance`):
+  speaking-rate normalisation first, then per-unit `duration_ratio`
+  (learner / reference duration, 1.0 = same rhythm) and a DTW duration
+  distance over the unit-duration sequences — rhythm is reported
+  separately from pronunciation, so a slow-but-correct unit is not
+  misread as mispronounced.
+- Confidence gating now cancels model bias both ways: a unit is
+  flagged (gop None, never scored as an error) when its own CTC
+  confidence is below 0.5 *or* when the paired reference unit is
+  below 0.5 — a boundary the model cannot place on the reference
+  cannot be blamed on the learner.
+- Wired into `WS /ws/align`: score payload now carries
+  `reference_alignment` (`ok` / `missing` / `unavailable` / `error`),
+  `duration_dtw_distance`, and per-unit `duration_ratio`; with no
+  reference it says `missing` and scores the learner alone, as in
+  Day 3.
 - Commit: `feat(score): relative alignment scoring with confidence gating`
+- Verified: 24 tests pass (14 Day 2–3 + 10 new in
+  `tests/test_relative_scoring.py`), including a WS end-to-end test
+  with a cached reference (DTW 0.0, duration ratios 1.0) and one with
+  a missing reference.
+- **Not yet done — do not call Day 4 finished:** no real reference
+  recording has been aligned here (no WhisperX stack / GPU, no real
+  spoken sentence), and units are still word-level from WhisperX —
+  per-phoneme / per-mora splitting needs the wav2vec2 phoneme CTC
+  head. GOP is still the CTC confidence placeholder, and pitch DTW
+  is Day 5.
 
 ## Day 5 — GOP + pitch
 - Goodness-of-pronunciation score per phoneme from CTC posteriors

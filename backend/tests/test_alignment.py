@@ -126,7 +126,7 @@ def test_ws_score_returns_fake_aligner_units(monkeypatch):
         assert score["alignment_unit"] == "mora"
         assert score["transcript"] == "こんにちは"
         assert score["units"] == [
-            {"label": "こん", "gop": 0.9, "flagged": False},
-            {"label": "にち", "gop": None, "flagged": True},
+            {"label": "こん", "gop": 0.9, "flagged": False, "duration_ratio": None},
+            {"label": "にち", "gop": None, "flagged": True, "duration_ratio": None},
         ]
         assert score["overall_gop"] == pytest.approx(0.9)

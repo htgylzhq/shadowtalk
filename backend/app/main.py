@@ -43,6 +43,7 @@ from app.services.alignment import (
     profile_for,
     score_utterance,
 )
+from app.services.reference import ReferenceStore, load_reference_pcm
 from app.services.vad import (
     FRAME_MS,
     VoiceActivityDetector,
@@ -56,6 +57,12 @@ SAMPLE_RATE_HZ = 16_000
 PCM_FRAME_BYTES = SAMPLE_RATE_HZ * FRAME_MS // 1000 * 2
 
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "data" / "sessions"
+REFERENCES_DIR = Path(__file__).resolve().parents[1] / "data" / "references"
+
+# Day 4: cached reference alignments, keyed by reference_id. A
+# reference recording is aligned once (same aligner as the learner)
+# and reused for every attempt; see services/reference.py.
+REFERENCE_STORE = ReferenceStore()
 
 # Day 3: the aligner used to score finished utterances. None in local
 # dev (no GPU / WhisperX stack here) — the score payload then says so
@@ -196,11 +203,12 @@ async def _score_session(
 ) -> dict:
     """Run alignment + scoring for a finished utterance.
 
-    The learner utterance is aligned with the configured aligner when
-    one is set (Day 3 wiring); the canonical reference alignment is
-    still Day 4, so scoring is currently against an empty reference —
-    speaking-rate normalisation is skipped in that case (see
-    services/alignment.py) and GOP comes from the learner units alone.
+    Day 4: the learner is scored *relative* to the canonical reference
+    alignment for session.reference_id when one is available — from the
+    in-memory ReferenceStore, or by aligning
+    data/references/<reference_id>.wav once and caching it. When no
+    reference exists the payload says so ("missing") and scoring falls
+    back to the learner units alone, as in Day 3.
     """
     language = detect_language(session.pcm, hint=session.language_hint)
     profile = profile_for(language)
@@ -217,9 +225,28 @@ async def _score_session(
         except Exception:
             alignment_status = "error"
 
-    # TODO(Day 4): replace the empty reference with a WhisperX alignment
-    # of the reference_id's canonical recording.
     reference = AlignmentResult(language=language, transcript="", units=[])
+    reference_status = "missing"
+    if session.reference_id:
+        cached = REFERENCE_STORE.get(session.reference_id)
+        if cached is not None:
+            reference = cached
+            reference_status = "ok"
+        else:
+            wav_path = REFERENCES_DIR / f"{session.reference_id}.wav"
+            if wav_path.exists():
+                if aligner is None:
+                    reference_status = "unavailable"
+                else:
+                    try:
+                        reference = REFERENCE_STORE.align_from_wav(
+                            session.reference_id, wav_path, language, aligner
+                        )
+                        reference_status = "ok"
+                    except AlignmentUnavailableError:
+                        reference_status = "unavailable"
+                    except Exception:
+                        reference_status = "error"
     result = score_utterance(learner, reference)
 
     latency_ms = int((time.monotonic() - session.started_at) * 1000)
@@ -232,6 +259,8 @@ async def _score_session(
         "alignment_backend": getattr(aligner, "name", None) if aligner else None,
         "transcript": learner.transcript,
         "reference_id": session.reference_id,
+        "reference_alignment": reference_status,
+        "duration_dtw_distance": result.duration_dtw_distance,
         "frames_received": session.frame_count,
         "utterance_wav": wav_name,
         "endpoint_reason": session.endpoint_reason,
@@ -240,7 +269,12 @@ async def _score_session(
         "overall_gop": result.overall_gop,
         "pitch_dtw_distance": result.pitch_dtw_distance,
         "units": [
-            {"label": u.label, "gop": u.gop, "flagged": u.flagged}
+            {
+                "label": u.label,
+                "gop": u.gop,
+                "flagged": u.flagged,
+                "duration_ratio": u.duration_ratio,
+            }
             for u in result.units
         ],
         "session_ms": latency_ms,
