@@ -14,10 +14,13 @@ from __future__ import annotations
 
 import tempfile
 import wave
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Protocol
+
+from app.services.gop import CTCPosteriors, gop_score
+from app.services.pitch import PitchContour, compare_contours
 
 
 class Language(str, Enum):
@@ -88,6 +91,9 @@ class AlignedUnit:
     start_s: float
     end_s: float
     ctc_confidence: float  # 0..1 posterior confidence for this boundary
+    # Target token ids of this unit in the CTC head's vocabulary, used
+    # for GOP. None when the aligner does not provide them.
+    token_ids: list[int] | None = None
 
 
 @dataclass
@@ -95,6 +101,9 @@ class AlignmentResult:
     language: Language
     transcript: str
     units: list[AlignedUnit] = field(default_factory=list)
+    # Frame-level CTC log-posteriors of the alignment head, for GOP.
+    # None when the aligner does not expose them.
+    posteriors: CTCPosteriors | None = None
 
 
 @dataclass
@@ -107,6 +116,13 @@ class UnitScore:
     # there is no paired reference unit (Day 4: no reference yet).
     duration_ratio: float | None = None
     reference_confidence: float | None = None
+    # Signed mean semitone difference vs. the reference pitch contour,
+    # each side relative to its own speaker's median F0. None when
+    # there is no pitch comparison, the unit is gated, or it is unvoiced.
+    pitch_delta: float | None = None
+    # "ctc_posteriors" (real GOP) or "ctc_confidence" (fallback when the
+    # aligner exposes no posteriors). None when the unit is gated.
+    gop_source: str | None = None
 
 
 @dataclass
@@ -118,6 +134,8 @@ class ScoreResult:
     # and the reference unit durations (seconds per unit, averaged).
     # None when there is no reference to compare against.
     duration_dtw_distance: float | None = None
+    # "ctc_posteriors", "ctc_confidence", "mixed", or None (nothing scored).
+    gop_source: str | None = None
 
 
 def detect_language(audio: bytes, hint: str | None = None) -> Language:
@@ -234,34 +252,72 @@ class WhisperXAligner:
                 str(wav_path),
                 self.device,
             )
+            posteriors = self._ctc_posteriors(pcm16k)
+            dictionary = self._align_metadata["dictionary"]  # type: ignore[index]
             units: list[AlignedUnit] = []
             for segment in aligned.get("segments", []):
                 for word in segment.get("words", []):
                     if "start" not in word or "end" not in word:
                         continue
+                    label = str(word["word"]).strip()
                     units.append(
                         AlignedUnit(
-                            label=str(word["word"]).strip(),
+                            label=label,
                             start_s=float(word["start"]),
                             end_s=float(word["end"]),
                             ctc_confidence=float(word.get("score", 1.0)),
+                            token_ids=_token_ids(label, dictionary) or None,
                         )
                     )
-            return AlignmentResult(language=language, transcript=transcript, units=units)
+            return AlignmentResult(
+                language=language,
+                transcript=transcript,
+                units=units,
+                posteriors=posteriors,
+            )
         finally:
             wav_path.unlink(missing_ok=True)
 
+    def _ctc_posteriors(self, pcm16k: bytes) -> CTCPosteriors:
+        """Run the alignment head once more to keep its frame posteriors.
 
-class PitchScorer:
-    """F0 pitch comparison: torchcrepe extraction, DTW vs. reference."""
+        ``whisperx.align`` computes these internally but does not return
+        them, so GOP re-runs the same wav2vec2 model (one forward pass).
+        Not yet exercised against a real model — see ROADMAP Day 5.
+        """
+        import numpy as np  # noqa: PLC0415
+        import torch  # noqa: PLC0415
 
-    def contour_distance(
-        self, learner_pcm16k: bytes, reference_pcm16k: bytes
-    ) -> float:
-        raise NotImplementedError(
-            "Extract F0 with torchcrepe for both clips, normalise per "
-            "speaker (z-score), and return the DTW distance."
+        samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
+        waveform = torch.from_numpy(samples)[None].to(self.device)
+        metadata = self._align_metadata
+        with torch.inference_mode():
+            if metadata["type"] == "torchaudio":  # type: ignore[index]
+                emissions, _ = self._align_model(waveform)  # type: ignore[misc]
+            else:
+                emissions = self._align_model(waveform).logits  # type: ignore[misc, union-attr]
+            log_probs = torch.log_softmax(emissions, dim=-1)[0].cpu().numpy()
+        dictionary = metadata["dictionary"]  # type: ignore[index]
+        blank_id = next(
+            (code for char, code in dictionary.items() if char in ("[pad]", "<pad>")), 0
         )
+        duration_s = samples.size / 16_000
+        return CTCPosteriors(
+            log_probs=log_probs,
+            frame_s=duration_s / max(log_probs.shape[0], 1),
+            blank_id=blank_id,
+        )
+
+
+def _token_ids(label: str, dictionary: dict[str, int]) -> list[int]:
+    """Map a unit label to CTC vocabulary ids, as whisperx does (chars, lowercased)."""
+    ids: list[int] = []
+    for char in label:
+        if char in dictionary:
+            ids.append(dictionary[char])
+        elif char.lower() in dictionary:
+            ids.append(dictionary[char.lower()])
+    return ids
 
 
 # --- Scoring -------------------------------------------------------------
@@ -275,13 +331,25 @@ class PitchScorer:
 CONFIDENCE_GATE = 0.5
 
 
-def gop_from_ctc_posteriors(unit: AlignedUnit) -> float:
-    """Goodness of Pronunciation for one unit from its CTC posteriors.
+def gop_from_ctc_posteriors(
+    unit: AlignedUnit, posteriors: CTCPosteriors | None = None
+) -> tuple[float | None, str]:
+    """Goodness of Pronunciation for one unit, and where it came from.
 
-    Stub: production computes the log posterior ratio of the target
-    unit against all competing units over the unit's frames.
+    With frame posteriors and target token ids (the real aligner), GOP
+    is the CTC posterior ratio of the target tokens against the best
+    competing path over the unit's frames (see services/gop.py); it is
+    None when the unit's frames cannot fit its own tokens, which the
+    caller gates as a boundary problem. Without posteriors (an aligner
+    that does not expose them), it falls back to the unit's CTC
+    confidence and says so via the "ctc_confidence" source.
     """
-    return unit.ctc_confidence  # placeholder until posteriors are wired
+    if posteriors is not None and unit.token_ids:
+        return (
+            gop_score(posteriors, unit.token_ids, unit.start_s, unit.end_s),
+            "ctc_posteriors",
+        )
+    return unit.ctc_confidence, "ctc_confidence"
 
 
 def speaking_rate_normalise(
@@ -299,8 +367,7 @@ def speaking_rate_normalise(
     reference_total = sum(u.end_s - u.start_s for u in reference_units) or 1.0
     ratio = reference_total / learner_total
     return [
-        AlignedUnit(u.label, u.start_s * ratio, u.end_s * ratio, u.ctc_confidence)
-        for u in units
+        replace(u, start_s=u.start_s * ratio, end_s=u.end_s * ratio) for u in units
     ]
 
 
@@ -336,6 +403,8 @@ def score_utterance(
     learner: AlignmentResult,
     reference: AlignmentResult,
     pitch_distance: float | None = None,
+    learner_pitch: PitchContour | None = None,
+    reference_pitch: PitchContour | None = None,
 ) -> ScoreResult:
     """Score a learner utterance against its canonical reference alignment.
 
@@ -348,20 +417,41 @@ def score_utterance(
     (model bias cancels). ``duration_ratio`` reports the rhythm
     comparison separately from pronunciation, so a slow-but-correct
     unit is not misread as mispronounced.
+
+    Day 5: GOP comes from the learner's CTC posteriors when the aligner
+    provides them (``gop_source`` "ctc_posteriors"), and a unit whose
+    frames cannot fit its own target tokens is gated like a
+    low-confidence one. With both pitch contours, the contours are
+    normalised per speaker and DTW-aligned: ``pitch_dtw_distance`` is
+    the mean semitone gap along the warp and each scored unit gets a
+    signed ``pitch_delta``. Gated units never get a GOP or pitch_delta.
     """
     normalised = speaking_rate_normalise(learner.units, reference.units)
+    pitch = None
+    if learner_pitch is not None and reference_pitch is not None:
+        pitch = compare_contours(learner_pitch, reference_pitch)
+        if pitch is not None:
+            pitch_distance = pitch.distance
     unit_scores: list[UnitScore] = []
     scored: list[float] = []
+    sources: set[str] = set()
     for i, unit in enumerate(normalised):
+        # GOP and pitch read the learner's own frames, so they use the
+        # original (not rate-normalised) unit boundaries.
+        original = learner.units[i]
         ref = reference.units[i] if i < len(reference.units) else None
         ref_duration = (ref.end_s - ref.start_s) if ref else None
         duration_ratio = None
         if ref_duration:
             duration_ratio = (unit.end_s - unit.start_s) / ref_duration
         ref_conf = ref.ctc_confidence if ref else None
-        if unit.ctc_confidence < CONFIDENCE_GATE or (
+        gated = unit.ctc_confidence < CONFIDENCE_GATE or (
             ref_conf is not None and ref_conf < CONFIDENCE_GATE
-        ):
+        )
+        gop, source = (None, None) if gated else gop_from_ctc_posteriors(
+            original, learner.posteriors
+        )
+        if gop is None:
             unit_scores.append(
                 UnitScore(
                     label=unit.label,
@@ -372,14 +462,22 @@ def score_utterance(
                 )
             )
             continue
-        gop = gop_from_ctc_posteriors(unit)
         scored.append(gop)
+        sources.add(source)
         unit_scores.append(
             UnitScore(
                 label=unit.label,
                 gop=gop,
                 duration_ratio=duration_ratio,
                 reference_confidence=ref_conf,
+                pitch_delta=(
+                    pitch.unit_delta(
+                        (original.start_s, original.end_s), (ref.start_s, ref.end_s)
+                    )
+                    if pitch and ref
+                    else None
+                ),
+                gop_source=source,
             )
         )
     overall = sum(scored) / len(scored) if scored else None
@@ -389,9 +487,13 @@ def score_utterance(
             [u.end_s - u.start_s for u in normalised],
             [u.end_s - u.start_s for u in reference.units],
         )
+    gop_source = None
+    if sources:
+        gop_source = sources.pop() if len(sources) == 1 else "mixed"
     return ScoreResult(
         units=unit_scores,
         overall_gop=overall,
         pitch_dtw_distance=pitch_distance,
         duration_dtw_distance=duration_dtw,
+        gop_source=gop_source,
     )
