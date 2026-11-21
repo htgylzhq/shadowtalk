@@ -1,0 +1,520 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		28B534EC9CB7BC74DC614F9E /* ScorePayloadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9838C9555120A82C6CFA8766 /* ScorePayloadTests.swift */; };
+		4052399EB6D3C6D7E276F0B4 /* ScoreView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 863DD6660A40EF29F05B3568 /* ScoreView.swift */; };
+		46E370FE9D8D11D45D9ABF56 /* ShadowTalkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5A70127BB7FC44480CF0B7D /* ShadowTalkApp.swift */; };
+		4826CD18CD8D3D08A369CBF3 /* RecorderViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544F167668857371B034D83E /* RecorderViewModel.swift */; };
+		7A2CBBE1F81D205F4C784A8A /* ScorePayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = D56ACF6A16E497DA75349360 /* ScorePayload.swift */; };
+		841BCA963B6688A45EC36F7D /* AlignSocket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89F7066D08CA1DEF2E61C3A9 /* AlignSocket.swift */; };
+		85588B3E8210C7B2CC549B6C /* SampleScore.json in Resources */ = {isa = PBXBuildFile; fileRef = 27504EF79D2913900CCB5AB3 /* SampleScore.json */; };
+		C6B4824D146CB4070E29957F /* ScoreFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C45606EF6DAEE09BBCA73A83 /* ScoreFlowTests.swift */; };
+		E123549620F7E1990B29E637 /* BackendConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08EF22979E9D5810147C5C51 /* BackendConfiguration.swift */; };
+		E55B02414895272DAB0E78C7 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BE59E7145EC4AD5F2F9F6F6 /* ContentView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		7DED5ABCD31FC0729A995059 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7819FEC10CA6A7DCC8478A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8D6E98190E542DD08168267E;
+			remoteInfo = ShadowTalk;
+		};
+		EBA537D6190A23BE0C36E2ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7819FEC10CA6A7DCC8478A2 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8D6E98190E542DD08168267E;
+			remoteInfo = ShadowTalk;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		08EF22979E9D5810147C5C51 /* BackendConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackendConfiguration.swift; sourceTree = "<group>"; };
+		1622FA1FB27903DDA7C0537F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		27504EF79D2913900CCB5AB3 /* SampleScore.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = SampleScore.json; sourceTree = "<group>"; };
+		544F167668857371B034D83E /* RecorderViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecorderViewModel.swift; sourceTree = "<group>"; };
+		576BBF0FAABEE3B111763AA9 /* ShadowTalkUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ShadowTalkUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		83599B738A03137E1CDB82C2 /* ShadowTalk.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ShadowTalk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		863DD6660A40EF29F05B3568 /* ScoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreView.swift; sourceTree = "<group>"; };
+		89F7066D08CA1DEF2E61C3A9 /* AlignSocket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlignSocket.swift; sourceTree = "<group>"; };
+		9838C9555120A82C6CFA8766 /* ScorePayloadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorePayloadTests.swift; sourceTree = "<group>"; };
+		9BE59E7145EC4AD5F2F9F6F6 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A5A70127BB7FC44480CF0B7D /* ShadowTalkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShadowTalkApp.swift; sourceTree = "<group>"; };
+		C45606EF6DAEE09BBCA73A83 /* ScoreFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoreFlowTests.swift; sourceTree = "<group>"; };
+		D56ACF6A16E497DA75349360 /* ScorePayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScorePayload.swift; sourceTree = "<group>"; };
+		FD4F77ABEB383238E2648FB9 /* ShadowTalkTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ShadowTalkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		8CA657C133D6DC6EF86281AC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				83599B738A03137E1CDB82C2 /* ShadowTalk.app */,
+				FD4F77ABEB383238E2648FB9 /* ShadowTalkTests.xctest */,
+				576BBF0FAABEE3B111763AA9 /* ShadowTalkUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9C84EFCA19D9D47E790F26FB = {
+			isa = PBXGroup;
+			children = (
+				E8C5EA2FE7D6CA3BD6F3A308 /* ShadowTalk */,
+				A09E1405A55AF3649B65AC71 /* ShadowTalkTests */,
+				FBFD302887CDCFEA525D0B14 /* ShadowTalkUITests */,
+				8CA657C133D6DC6EF86281AC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A09E1405A55AF3649B65AC71 /* ShadowTalkTests */ = {
+			isa = PBXGroup;
+			children = (
+				9838C9555120A82C6CFA8766 /* ScorePayloadTests.swift */,
+			);
+			path = ShadowTalkTests;
+			sourceTree = "<group>";
+		};
+		E8C5EA2FE7D6CA3BD6F3A308 /* ShadowTalk */ = {
+			isa = PBXGroup;
+			children = (
+				89F7066D08CA1DEF2E61C3A9 /* AlignSocket.swift */,
+				08EF22979E9D5810147C5C51 /* BackendConfiguration.swift */,
+				9BE59E7145EC4AD5F2F9F6F6 /* ContentView.swift */,
+				1622FA1FB27903DDA7C0537F /* Info.plist */,
+				544F167668857371B034D83E /* RecorderViewModel.swift */,
+				27504EF79D2913900CCB5AB3 /* SampleScore.json */,
+				D56ACF6A16E497DA75349360 /* ScorePayload.swift */,
+				863DD6660A40EF29F05B3568 /* ScoreView.swift */,
+				A5A70127BB7FC44480CF0B7D /* ShadowTalkApp.swift */,
+			);
+			path = ShadowTalk;
+			sourceTree = "<group>";
+		};
+		FBFD302887CDCFEA525D0B14 /* ShadowTalkUITests */ = {
+			isa = PBXGroup;
+			children = (
+				C45606EF6DAEE09BBCA73A83 /* ScoreFlowTests.swift */,
+			);
+			path = ShadowTalkUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		0D7D34E131B60ABDC1151CC1 /* ShadowTalkTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4888399AEF441795D1066D2D /* Build configuration list for PBXNativeTarget "ShadowTalkTests" */;
+			buildPhases = (
+				44715EFB48024CABF01C8378 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8078C645FD6B176C3B4E59D7 /* PBXTargetDependency */,
+			);
+			name = ShadowTalkTests;
+			packageProductDependencies = (
+			);
+			productName = ShadowTalkTests;
+			productReference = FD4F77ABEB383238E2648FB9 /* ShadowTalkTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		8D6E98190E542DD08168267E /* ShadowTalk */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0C571D4B1B81E61365450A8 /* Build configuration list for PBXNativeTarget "ShadowTalk" */;
+			buildPhases = (
+				E00ABCBA948C28C8053E2A5B /* Sources */,
+				AC16E6E2F66AAC64F5F71D9A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ShadowTalk;
+			packageProductDependencies = (
+			);
+			productName = ShadowTalk;
+			productReference = 83599B738A03137E1CDB82C2 /* ShadowTalk.app */;
+			productType = "com.apple.product-type.application";
+		};
+		90FB3CA126B38A0E226710C6 /* ShadowTalkUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA772BEB0D508FF5F18B658F /* Build configuration list for PBXNativeTarget "ShadowTalkUITests" */;
+			buildPhases = (
+				3582DCEDF598421090BE8154 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				5684033D2579BDF3ABD97100 /* PBXTargetDependency */,
+			);
+			name = ShadowTalkUITests;
+			packageProductDependencies = (
+			);
+			productName = ShadowTalkUITests;
+			productReference = 576BBF0FAABEE3B111763AA9 /* ShadowTalkUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C7819FEC10CA6A7DCC8478A2 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					90FB3CA126B38A0E226710C6 = {
+						TestTargetID = 8D6E98190E542DD08168267E;
+					};
+				};
+			};
+			buildConfigurationList = 7C5EB51B6AEDC5CB1FC1E5EB /* Build configuration list for PBXProject "ShadowTalk" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9C84EFCA19D9D47E790F26FB;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8CA657C133D6DC6EF86281AC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8D6E98190E542DD08168267E /* ShadowTalk */,
+				0D7D34E131B60ABDC1151CC1 /* ShadowTalkTests */,
+				90FB3CA126B38A0E226710C6 /* ShadowTalkUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AC16E6E2F66AAC64F5F71D9A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				85588B3E8210C7B2CC549B6C /* SampleScore.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3582DCEDF598421090BE8154 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C6B4824D146CB4070E29957F /* ScoreFlowTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		44715EFB48024CABF01C8378 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				28B534EC9CB7BC74DC614F9E /* ScorePayloadTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E00ABCBA948C28C8053E2A5B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				841BCA963B6688A45EC36F7D /* AlignSocket.swift in Sources */,
+				E123549620F7E1990B29E637 /* BackendConfiguration.swift in Sources */,
+				E55B02414895272DAB0E78C7 /* ContentView.swift in Sources */,
+				4826CD18CD8D3D08A369CBF3 /* RecorderViewModel.swift in Sources */,
+				7A2CBBE1F81D205F4C784A8A /* ScorePayload.swift in Sources */,
+				4052399EB6D3C6D7E276F0B4 /* ScoreView.swift in Sources */,
+				46E370FE9D8D11D45D9ABF56 /* ShadowTalkApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		5684033D2579BDF3ABD97100 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8D6E98190E542DD08168267E /* ShadowTalk */;
+			targetProxy = 7DED5ABCD31FC0729A995059 /* PBXContainerItemProxy */;
+		};
+		8078C645FD6B176C3B4E59D7 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8D6E98190E542DD08168267E /* ShadowTalk */;
+			targetProxy = EBA537D6190A23BE0C36E2ED /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		326A599E9EFBB189E52AB067 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ShadowTalk.app/ShadowTalk";
+			};
+			name = Release;
+		};
+		5CFBC8DB79E98288223A0730 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A3A558CF88DB5B160BFFEF26 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ShadowTalk;
+			};
+			name = Debug;
+		};
+		AD536294E963BBF9FE3B8DD8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		EA2C0FF2D641FBD31A2D90FF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ShadowTalk/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		ED00C9910BE144A2BF1E3503 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = ShadowTalk;
+			};
+			name = Release;
+		};
+		F044EB469F93947F5A7176A2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ShadowTalk.app/ShadowTalk";
+			};
+			name = Debug;
+		};
+		FE8807EB00B7DEE4B5D063D1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ShadowTalk/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.shadowtalk.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4888399AEF441795D1066D2D /* Build configuration list for PBXNativeTarget "ShadowTalkTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F044EB469F93947F5A7176A2 /* Debug */,
+				326A599E9EFBB189E52AB067 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7C5EB51B6AEDC5CB1FC1E5EB /* Build configuration list for PBXProject "ShadowTalk" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5CFBC8DB79E98288223A0730 /* Debug */,
+				AD536294E963BBF9FE3B8DD8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C0C571D4B1B81E61365450A8 /* Build configuration list for PBXNativeTarget "ShadowTalk" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EA2C0FF2D641FBD31A2D90FF /* Debug */,
+				FE8807EB00B7DEE4B5D063D1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FA772BEB0D508FF5F18B658F /* Build configuration list for PBXNativeTarget "ShadowTalkUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A3A558CF88DB5B160BFFEF26 /* Debug */,
+				ED00C9910BE144A2BF1E3503 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = C7819FEC10CA6A7DCC8478A2 /* Project object */;
+}

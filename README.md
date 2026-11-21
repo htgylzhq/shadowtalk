@@ -114,3 +114,29 @@ uvicorn app.main:app --reload
 The heavy ML dependencies (WhisperX, faster-whisper, torchcrepe) run on GPU
 workers in production; the API process imports them lazily, so the app
 starts without them for local development of the streaming layer.
+
+## Run the iOS recorder
+
+1. Open `ios/ShadowTalk.xcodeproj` in Xcode and run the **ShadowTalk** scheme
+   on an iOS 17 or later simulator or device.
+2. Choose **View sample score** to open the score screen without the microphone
+   or backend. To score a recording, tap **Record**, speak, and tap **Stop**
+   if the backend hasn't detected the end of speech. If the app can't reach the
+   server, it shows a labeled sample instead.
+
+The app uses `http://localhost:8000` by default. To use another server, set
+`SHADOWTALK_BACKEND_URL` to its HTTP or HTTPS base URL in the **ShadowTalk**
+scheme's Run environment or the app target's build settings. For a physical
+device, use a URL the device can reach rather than `localhost`.
+
+To compare against a reference, set `SHADOWTALK_REFERENCE_ID` to the basename
+of a WAV in `backend/data/references/` and `SHADOWTALK_LANGUAGE` to its
+language code (default `ja`). Run the backend with a configured aligner and
+`SHADOWTALK_PITCH=torchcrepe`. The chart uses the optional `pitch_contour`
+object in the v1 score response. Its `learner` and `reference` arrays are
+semitones relative to each speaker's median, with `null` for unvoiced frames
+and `frame_s` seconds between samples. The chart shows elapsed time for each
+recording, not the dynamic time warping path.
+
+Run the model and recorder flow tests with **Product > Test** on an iPhone
+simulator. The offline recording test needs simulator microphone access.

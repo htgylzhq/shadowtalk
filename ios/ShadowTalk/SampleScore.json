@@ -1,0 +1,18 @@
+{
+  "type": "score",
+  "score_version": 1,
+  "alignment": "ok",
+  "overall_gop": 0.81,
+  "scores": [
+    {"phoneme": "こ", "gop": 0.92, "pitch_delta": 0.4, "flagged": false},
+    {"phoneme": "ん", "gop": 0.88, "pitch_delta": -0.5, "flagged": false},
+    {"phoneme": "に", "gop": null, "pitch_delta": null, "flagged": true},
+    {"phoneme": "ち", "gop": 0.65, "pitch_delta": 1.8, "flagged": false},
+    {"phoneme": "は", "gop": 0.79, "pitch_delta": -0.9, "flagged": false}
+  ],
+  "pitch_contour": {
+    "frame_s": 0.05,
+    "learner": [-1.6, -1.1, -0.2, 1.7, 2.8, 2.9, 2.3, 1.0, 0.1, null, null, 1.1, 1.6, 1.2, 0.0, -0.8, -1.7, -2.4, -2.9],
+    "reference": [-2.0, -1.5, -0.6, 1.2, 2.6, 2.4, 1.4, 0.7, 0.0, null, 0.1, 0.6, 0.4, -0.7, -1.4, -1.9, -2.0]
+  }
+}
