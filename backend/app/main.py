@@ -36,6 +36,8 @@ from pathlib import Path
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.services.alignment import (
+    PHONEME_MODEL,
+    Wav2Vec2PhonemeAligner,
     Aligner,
     AlignmentResult,
     AlignmentUnavailableError,
@@ -85,7 +87,14 @@ def default_aligner() -> Aligner | None:
     """Build the aligner from the environment, or None in local dev."""
     import os
 
-    if os.environ.get("SHADOWTALK_ALIGNER") != "whisperx":
+    kind = os.environ.get("SHADOWTALK_ALIGNER")
+    device = os.environ.get("SHADOWTALK_DEVICE", "cpu")
+    if kind == "phoneme" and Wav2Vec2PhonemeAligner.available():
+        return Wav2Vec2PhonemeAligner(
+            model_name=os.environ.get("SHADOWTALK_PHONEME_MODEL", PHONEME_MODEL),
+            device=device,
+        )
+    if kind != "whisperx":
         return None
     if not WhisperXAligner.available():
         return None
