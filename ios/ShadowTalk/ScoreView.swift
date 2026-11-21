@@ -69,7 +69,9 @@ private struct PhonemeScoreRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            LabeledContent {
+            HStack(alignment: .firstTextBaseline) {
+                Text(score.phoneme).font(.headline)
+                Spacer(minLength: 12)
                 if score.flagged {
                     Label("Low confidence", systemImage: "flag.fill")
                         .foregroundStyle(.secondary)
@@ -79,8 +81,6 @@ private struct PhonemeScoreRow: View {
                 } else {
                     Text("Pitch unavailable")
                 }
-            } label: {
-                Text(score.phoneme).font(.headline)
             }
             if let gop = score.displayGOP {
                 ProgressView(value: gop, total: 1) {
@@ -91,6 +91,7 @@ private struct PhonemeScoreRow: View {
                 Text("Not scored").font(.caption).foregroundStyle(.secondary)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 3)
     }
 }
