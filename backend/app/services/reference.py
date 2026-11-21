@@ -65,6 +65,7 @@ class ReferenceStore:
         self._cache[reference_id] = result
         if pcm16k is not None:
             self._pcm[reference_id] = pcm16k
+            self._pitch.pop(reference_id, None)
         return result
 
     def forget(self, reference_id: str) -> None:
