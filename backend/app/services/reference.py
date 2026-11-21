@@ -25,6 +25,7 @@ from app.services.alignment import (
     AlignmentUnavailableError,
     Language,
 )
+from app.services.pitch import PitchContour, PitchExtractor
 
 
 def load_reference_pcm(wav_path: str | Path) -> bytes:
@@ -48,13 +49,53 @@ class ReferenceStore:
 
     def __init__(self) -> None:
         self._cache: dict[str, AlignmentResult] = {}
+        # Day 5: reference audio and its F0 contour, for pitch scoring.
+        self._pcm: dict[str, bytes] = {}
+        self._pitch: dict[str, PitchContour] = {}
 
     def get(self, reference_id: str) -> AlignmentResult | None:
         return self._cache.get(reference_id)
 
-    def register(self, reference_id: str, result: AlignmentResult) -> AlignmentResult:
+    def register(
+        self,
+        reference_id: str,
+        result: AlignmentResult,
+        pcm16k: bytes | None = None,
+    ) -> AlignmentResult:
         self._cache[reference_id] = result
+        if pcm16k is not None:
+            self._pcm[reference_id] = pcm16k
         return result
+
+    def forget(self, reference_id: str) -> None:
+        self._cache.pop(reference_id, None)
+        self._pcm.pop(reference_id, None)
+        self._pitch.pop(reference_id, None)
+
+    def pitch_contour(
+        self,
+        reference_id: str,
+        extractor: PitchExtractor,
+        wav_path: str | Path | None = None,
+    ) -> PitchContour | None:
+        """Extract the reference F0 contour once; later calls reuse it.
+
+        Uses the reference audio kept from alignment / registration, or
+        ``wav_path`` when given and present. None when there is no
+        reference audio at all.
+        """
+        cached = self._pitch.get(reference_id)
+        if cached is not None:
+            return cached
+        pcm = self._pcm.get(reference_id)
+        if pcm is None and wav_path is not None and Path(wav_path).exists():
+            pcm = load_reference_pcm(wav_path)
+            self._pcm[reference_id] = pcm
+        if pcm is None:
+            return None
+        contour = extractor.extract(pcm)
+        self._pitch[reference_id] = contour
+        return contour
 
     def align_reference(
         self,
@@ -78,6 +119,7 @@ class ReferenceStore:
             )
         result = aligner.align(pcm16k, language)
         self._cache[reference_id] = result
+        self._pcm[reference_id] = pcm16k
         return result
 
     def align_from_wav(

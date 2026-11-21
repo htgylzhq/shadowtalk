@@ -43,6 +43,12 @@ from app.services.alignment import (
     profile_for,
     score_utterance,
 )
+from app.services.pitch import (
+    CrepePitchExtractor,
+    PitchContour,
+    PitchExtractor,
+    PitchUnavailableError,
+)
 from app.services.reference import ReferenceStore, load_reference_pcm
 from app.services.vad import (
     FRAME_MS,
@@ -83,6 +89,29 @@ def default_aligner() -> Aligner | None:
         return None
     return WhisperXAligner(
         model_size=os.environ.get("SHADOWTALK_WHISPER_MODEL", "tiny"),
+        device=os.environ.get("SHADOWTALK_DEVICE", "cpu"),
+    )
+
+
+# Day 5: F0 extractor for pitch-contour scoring. None in local dev (no
+# torch / torchcrepe here) — the payload then says "pitch": "unavailable".
+# Set it on a GPU worker, e.g. `main.PITCH_EXTRACTOR =
+# CrepePitchExtractor(device="cuda")`, or via SHADOWTALK_PITCH=torchcrepe.
+PITCH_EXTRACTOR: PitchExtractor | None = None
+
+SCORE_PAYLOAD_VERSION = 1
+
+
+def default_pitch_extractor() -> PitchExtractor | None:
+    """Build the pitch extractor from the environment, or None in local dev."""
+    import os
+
+    if os.environ.get("SHADOWTALK_PITCH") != "torchcrepe":
+        return None
+    if not CrepePitchExtractor.available():
+        return None
+    return CrepePitchExtractor(
+        model=os.environ.get("SHADOWTALK_CREPE_MODEL", "tiny"),
         device=os.environ.get("SHADOWTALK_DEVICE", "cpu"),
     )
 
@@ -247,7 +276,15 @@ async def _score_session(
                         reference_status = "unavailable"
                     except Exception:
                         reference_status = "error"
-    result = score_utterance(learner, reference)
+    pitch_status, learner_pitch, reference_pitch = _pitch_contours(session)
+    result = score_utterance(
+        learner,
+        reference,
+        learner_pitch=learner_pitch,
+        reference_pitch=reference_pitch,
+    )
+    if pitch_status == "ok" and result.pitch_dtw_distance is None:
+        pitch_status = "unvoiced"
 
     latency_ms = int((time.monotonic() - session.started_at) * 1000)
     return {
@@ -267,6 +304,9 @@ async def _score_session(
         "vad_backend": session.vad.backend,
         "speech_ms": session.vad.speech_ms,
         "overall_gop": result.overall_gop,
+        "gop_source": result.gop_source,
+        "pitch": pitch_status,
+        "pitch_backend": getattr(PITCH_EXTRACTOR, "name", None),
         "pitch_dtw_distance": result.pitch_dtw_distance,
         "units": [
             {
@@ -277,5 +317,48 @@ async def _score_session(
             }
             for u in result.units
         ],
+        # Score payload v1 (Day 5): one entry per aligned unit. "phoneme"
+        # is the unit label in the language profile's unit set (phoneme,
+        # mora, or initial/final); "flagged" means confidence-gated, so
+        # gop and pitch_delta are None and it is not a learner error.
+        "score_version": SCORE_PAYLOAD_VERSION,
+        "scores": [
+            {
+                "phoneme": u.label,
+                "gop": u.gop,
+                "pitch_delta": u.pitch_delta,
+                "flagged": u.flagged,
+            }
+            for u in result.units
+        ],
         "session_ms": latency_ms,
     }
+
+
+def _pitch_contours(
+    session: UtteranceSession,
+) -> tuple[str, PitchContour | None, PitchContour | None]:
+    """F0 contours for the learner and the session's reference.
+
+    Status: "ok" (both extracted), "missing" (no reference audio),
+    "unavailable" (no extractor / torchcrepe), or "error".
+    """
+    extractor = PITCH_EXTRACTOR
+    if extractor is None:
+        return "unavailable", None, None
+    try:
+        learner_pitch = extractor.extract(session.pcm)
+        reference_pitch = None
+        if session.reference_id:
+            reference_pitch = REFERENCE_STORE.pitch_contour(
+                session.reference_id,
+                extractor,
+                REFERENCES_DIR / f"{session.reference_id}.wav",
+            )
+    except PitchUnavailableError:
+        return "unavailable", None, None
+    except Exception:
+        return "error", None, None
+    if reference_pitch is None:
+        return "missing", learner_pitch, None
+    return "ok", learner_pitch, reference_pitch
