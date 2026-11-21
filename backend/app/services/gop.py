@@ -154,8 +154,7 @@ def ctc_forced_align_words(
     never said is skipped instead of being stretched over a neighbouring
     word's audio. Words may also be left out at the start or end.
     Returns, per word, the ``(first, last)`` frame span of each target
-    token, or None for a skipped word; None overall when nothing fits or
-    every word is skipped.
+    token, or None for a skipped word; None overall when nothing fits.
     """
     frames = int(log_probs.shape[0])
     if frames == 0 or not words or not any(words):
@@ -252,7 +251,7 @@ def ctc_forced_align_words(
                 break
             spans.append((int(hits[0]), int(hits[-1])))
         out.append(spans if len(spans) == len(states_w) and spans else None)
-    return out if any(out) else None
+    return out
 
 
 def gop_score(
