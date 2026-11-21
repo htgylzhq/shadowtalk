@@ -33,6 +33,14 @@ final class ScorePayloadTests: XCTestCase {
         XCTAssertEqual(payload.flaggedCount, 1)
     }
 
+    func testFallbackScoresAndDisabledPitchAreLabeledAccurately() throws {
+        let json = #"{"scores":[],"gop_source":"ctc_confidence","pitch":"unavailable"}"#
+        let payload = try JSONDecoder().decode(ScorePayload.self, from: Data(json.utf8))
+
+        XCTAssertEqual(payload.pronunciationMetric, "Alignment confidence")
+        XCTAssertEqual(payload.missingPitchMessage, "Pitch extraction is not available on the server.")
+    }
+
     func testBundledSampleHasComparableContoursWithUnvoicedGaps() throws {
         let sample = try ScorePayload.sample()
         let contour = try XCTUnwrap(sample.pitchContour)
