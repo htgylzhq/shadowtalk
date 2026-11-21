@@ -114,23 +114,20 @@ def lesson_units(
 
 
 def group_initial_final(units: list[AlignedUnit]) -> list[AlignedUnit]:
-    """Merge decoded per-token units into initial and final units.
+    """Attach decoded codas to their finals.
 
-    A toned token starts a final. A coda (n, ŋ, ɻ) after a final joins
-    it unless a toned token follows directly, in which case it is the
-    next syllable's initial. Other tokens form an initial, consecutive
-    ones together. Decoded finals carry no lexical tone: the IPA mark
-    cannot tell tone 1 from tone 4.
+    The CTC head already emits a Mandarin initial or a toned final as one
+    token; only a coda (n, ŋ, ɻ) comes separately. It joins the final
+    before it unless a toned token follows directly, in which case it is
+    the next syllable's initial. Any other token stays its own unit.
+    Decoded finals carry no lexical tone: the IPA mark cannot tell tone
+    1 from tone 4.
     """
     groups: list[list[AlignedUnit]] = []
     for n, unit in enumerate(units):
         nxt = units[n + 1].label if n + 1 < len(units) else ""
-        last_is_final = bool(groups) and is_final(groups[-1][0].label)
-        if is_final(unit.label):
-            groups.append([unit])
-        elif last_is_final and unit.label in CODAS and not is_final(nxt):
-            groups[-1].append(unit)
-        elif groups and not last_is_final:
+        after_final = bool(groups) and is_final(groups[-1][0].label)
+        if after_final and unit.label in CODAS and not is_final(nxt):
             groups[-1].append(unit)
         else:
             groups.append([unit])

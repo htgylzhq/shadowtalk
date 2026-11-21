@@ -380,8 +380,9 @@ class Wav2Vec2PhonemeAligner:
     times, straight from the CTC posteriors, so no transcript or G2P is
     needed: the reference recording is decoded the same way and
     ``pair_units`` matches the two sequences. Verified on CPU with
-    English; Japanese / Mandarin still need a symbol map (mora grouping,
-    tones) and are unverified.
+    English. Mandarin decodes are grouped into initials and toned finals
+    (app.services.mandarin), run on CPU with synthetic espeak speech
+    only; Japanese still needs mora grouping.
     """
 
     name = "wav2vec2-phoneme"
