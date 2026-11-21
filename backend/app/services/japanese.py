@@ -117,6 +117,12 @@ def morae(kana: str) -> list[tuple[str, list[str]]]:
         elif c in _KANA:
             cons, vowel = _KANA[c]
             out.append((c, [cons, vowel] if cons else [vowel]))
+    return assimilate_nasals(out)
+
+
+def assimilate_nasals(units: list[tuple[str, list[str]]]) -> list[tuple[str, list[str]]]:
+    """Give each ン the place of the consonant after it."""
+    out = list(units)
     for n, (label, _) in enumerate(out):
         if label == "ン":
             nxt = out[n + 1][1] if n + 1 < len(out) else []
@@ -143,20 +149,26 @@ def fold_sokuon(units: list[tuple[str, list[str]]]) -> list[tuple[str, list[str]
     return out
 
 
-def devoice(units: list[list[str]]) -> list[list[str]]:
+def devoice(units: list[tuple[str, list[str]]]) -> list[tuple[str, list[str]]]:
     """Drop the i/u of a mora devoiced in standard Japanese.
 
-    A high vowel after a voiceless consonant is devoiced before another
-    voiceless consonant and at the end of the utterance (す in です,
-    く in 緑茶, し in ました); the model hears no vowel there.
+    A short high vowel after a voiceless consonant is devoiced before
+    another voiceless consonant and at the end of the utterance (す in
+    です, く in 緑茶, し in ました); the model hears no vowel there. Long
+    vowels (ヒー, スー) stay voiced.
     """
-    out = [list(p) for p in units]
-    for n, phones in enumerate(out):
-        if len(phones) < 2 or phones[-1] not in ("i", "u") or phones[-2] not in _VOICELESS:
+    out = list(units)
+    for n, (label, phones) in enumerate(units):
+        if (
+            label.endswith("ー")
+            or len(phones) < 2
+            or phones[-1] not in ("i", "u")
+            or phones[-2] not in _VOICELESS
+        ):
             continue
-        nxt = units[n + 1] if n + 1 < len(units) else None
+        nxt = units[n + 1][1] if n + 1 < len(units) else None
         if nxt is None or nxt[0] in _VOICELESS:
-            out[n] = phones[:-1]
+            out[n] = (label, phones[:-1])
     return out
 
 
@@ -195,10 +207,12 @@ def lesson_units(
             return []
         flat += [(surface, index, label, phones) for label, phones in units]
         index += 1
-    voiced = devoice([phones for *_, phones in flat])
+    # Assimilation and devoicing look at the next mora, which may be in
+    # the next word (本が, 学生です).
+    phones = devoice(assimilate_nasals([(label, p) for _, _, label, p in flat]))
     out = [
         LessonUnit(word, index, label, ids)
-        for (word, index, label, _), phones in zip(flat, voiced)
-        if (ids := [vocab[p] for p in phones if p in vocab])
+        for (word, index, _, _), (label, p) in zip(flat, phones)
+        if (ids := [vocab[t] for t in p if t in vocab])
     ]
     return out
