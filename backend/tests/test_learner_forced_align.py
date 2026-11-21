@@ -85,8 +85,17 @@ def test_learner_without_posteriors_keeps_decoded_pairing():
     assert force_to_reference(no_post, lesson(*GREEN_TEA)) is None
 
 
-def test_too_short_learner_audio_falls_back():
-    assert force_to_reference(learner(frames(0, 1)), lesson(*GREEN_TEA)) is None
+def test_silent_learner_skips_every_word():
+    result = score_utterance(learner(frames(0, 0, 0, 0, 0, 0)), lesson(*GREEN_TEA))
+    assert result.units == []
+    assert result.skipped == ["ɡ", "ɹ", "iː", "n", "t", "iː"]
+
+
+def test_unrelated_speech_is_skipped_or_scored_low():
+    # Learner says "like" to the lesson "green tea".
+    result = score_utterance(learner(frames(0, 4, 0, 3, 3, 0, 5, 0)), lesson(*GREEN_TEA))
+    assert len(result.units) + len(result.skipped) == 6
+    assert all(u.gop is None or u.gop < 0.2 for u in result.units)
 
 
 def test_word_skipped_mid_sentence_does_not_steal_the_next_words_audio():
