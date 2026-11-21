@@ -126,6 +126,15 @@ def test_decoded_tokens_group_into_initials_and_finals():
     assert all(u.tone is None for u in grouped)
 
 
+def test_decoded_coda_before_zero_initial_er_or_a_toned_final_stays_in_the_final():
+    def labels(*tokens):
+        decoded = [AlignedUnit(t, i * 0.1, i * 0.1 + 0.1, 0.8, token_ids=[i]) for i, t in enumerate(tokens)]
+        return [u.label for u in mandarin.group_initial_final(decoded)]
+
+    assert labels("t", "iɛ2", "n", "ərɜ") == ["t", "iɛ2n", "ərɜ"]
+    assert labels("t", "ɑ5", "ŋ", "ɑ5") == ["t", "ɑ5ŋ", "ɑ5"]
+
+
 def test_align_text_spans_a_multi_token_final(monkeypatch):
     aligner = Wav2Vec2PhonemeAligner()
     log_probs = frames(0, 10, 11, 11, 1, 0, 12, 12, 0)
