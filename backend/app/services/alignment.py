@@ -412,7 +412,11 @@ class Wav2Vec2PhonemeAligner:
         samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
         if samples.size < WAV2VEC2_MIN_SAMPLES:
             return AlignmentResult(language=language, transcript="", units=[])
-        log_probs, blank_id, vocab = self._posteriors(samples)
+        return self._decoded(*self._posteriors(samples), language)
+
+    def _decoded(
+        self, log_probs: np.ndarray, blank_id: int, vocab: dict[str, int], language: Language
+    ) -> AlignmentResult:
         id_to_token = {i: t for t, i in vocab.items()}
         units = units_from_ctc(log_probs, WAV2VEC2_FRAME_S, blank_id, id_to_token)
         return AlignmentResult(
@@ -421,7 +425,6 @@ class Wav2Vec2PhonemeAligner:
             units=units,
             posteriors=CTCPosteriors(log_probs, WAV2VEC2_FRAME_S, blank_id),
         )
-
 
     def _posteriors(self, samples: np.ndarray) -> tuple[np.ndarray, int, dict[str, int]]:
         self._load()
@@ -457,7 +460,7 @@ class Wav2Vec2PhonemeAligner:
         flat = [(word, token) for word, ids in targets for token in ids]
         spans = ctc_forced_align(log_probs, [t for _, t in flat], blank_id) if flat else None
         if spans is None:
-            return self.align(pcm16k, language)
+            return self._decoded(log_probs, blank_id, vocab, language)
         id_to_token = {i: t for t, i in vocab.items()}
         probs = np.exp(log_probs)
         units = []
