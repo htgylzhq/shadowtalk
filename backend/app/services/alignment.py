@@ -529,7 +529,7 @@ def dtw_duration_distance(
 def _unit_key(label: str) -> str:
     return "".join(
         c for c in unicodedata.normalize("NFKC", label).casefold()
-        if unicodedata.category(c)[0] in "LN"
+        if unicodedata.category(c)[0] in "LMN"  # keep IPA diacritics (n̩ ≠ n)
     )
 
 
