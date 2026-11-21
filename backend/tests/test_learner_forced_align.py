@@ -104,3 +104,26 @@ def test_mispronounced_word_is_scored_not_skipped():
     result = score_utterance(learner(lp), lesson(("like", [4, 3, 5]), ("tea", [1, 2])))
     assert result.skipped == []
     assert result.units[-1].label == "iː" and result.units[-1].gop < 0.2
+
+
+def test_skipped_opening_word_with_no_leading_silence():
+    # Learner says "tea" straight away, no blank frame before it.
+    result = score_utterance(learner(frames(1, 1, 0, 2, 2, 0)), lesson(*GREEN_TEA))
+    assert result.skipped == ["ɡ", "ɹ", "iː", "n"]
+    assert [u.label for u in result.units] == ["t", "iː"]
+    assert all(u.gop == pytest.approx(1.0, abs=0.05) for u in result.units)
+
+
+def test_skipped_closing_word_with_no_trailing_silence():
+    lp = frames(0, 1, 0, 2, 2)
+    result = score_utterance(learner(lp), lesson(("tea", [1, 2]), ("like", [4, 3, 5])))
+    assert result.skipped == ["l", "aɪ", "k"]
+    assert all(u.gop == pytest.approx(1.0, abs=0.05) for u in result.units)
+
+
+def test_two_words_skipped_back_to_back():
+    # Lesson "like green tea", learner says only "like".
+    lp = frames(0, 4, 0, 3, 0, 5, 0, 0)
+    result = score_utterance(learner(lp), lesson(("like", [4, 3, 5]), *GREEN_TEA))
+    assert result.skipped == ["ɡ", "ɹ", "iː", "n", "t", "iː"]
+    assert [u.word for u in result.units] == ["like"] * 3
