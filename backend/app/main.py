@@ -310,6 +310,7 @@ async def _score_session(
         "transcript": learner.transcript,
         "reference_id": session.reference_id,
         "reference_alignment": reference_status,
+        "skipped": result.skipped,
         "duration_dtw_distance": result.duration_dtw_distance,
         "frames_received": session.frame_count,
         "utterance_wav": wav_name,

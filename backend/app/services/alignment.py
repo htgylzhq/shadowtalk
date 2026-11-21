@@ -12,7 +12,9 @@ the API process can run without them in local development.
 
 from __future__ import annotations
 
+import difflib
 import tempfile
+import unicodedata
 import wave
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -136,6 +138,8 @@ class ScoreResult:
     duration_dtw_distance: float | None = None
     # "ctc_posteriors", "ctc_confidence", "mixed", or None (nothing scored).
     gop_source: str | None = None
+    # Reference unit labels the learner never said (no learner unit paired).
+    skipped: list[str] = field(default_factory=list)
 
 
 def detect_language(audio: bytes, hint: str | None = None) -> Language:
@@ -353,7 +357,9 @@ def gop_from_ctc_posteriors(
 
 
 def speaking_rate_normalise(
-    units: list[AlignedUnit], reference_units: list[AlignedUnit]
+    units: list[AlignedUnit],
+    reference_units: list[AlignedUnit],
+    pairs: list[int | None] | None = None,
 ) -> list[AlignedUnit]:
     """Scale unit durations by the learner/reference total-duration ratio.
 
@@ -363,8 +369,15 @@ def speaking_rate_normalise(
     """
     if not units or not reference_units:
         return list(units)
-    learner_total = sum(u.end_s - u.start_s for u in units) or 1.0
-    reference_total = sum(u.end_s - u.start_s for u in reference_units) or 1.0
+    # With pairs, only paired units set the rate: a skipped or extra
+    # word is not tempo.
+    if pairs is not None:
+        matched = [(u, reference_units[j]) for u, j in zip(units, pairs) if j is not None]
+        units_used, refs_used = [u for u, _ in matched], [r for _, r in matched]
+    else:
+        units_used, refs_used = units, reference_units
+    learner_total = sum(u.end_s - u.start_s for u in units_used) or 1.0
+    reference_total = sum(u.end_s - u.start_s for u in refs_used) or 1.0
     ratio = reference_total / learner_total
     return [
         replace(u, start_s=u.start_s * ratio, end_s=u.end_s * ratio) for u in units
@@ -399,6 +412,36 @@ def dtw_duration_distance(
     return prev[m] / max(n, m)
 
 
+def _unit_key(label: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFKC", label).casefold()
+        if unicodedata.category(c)[0] in "LN"
+    )
+
+
+def pair_units(
+    learner: list[AlignedUnit], reference: list[AlignedUnit]
+) -> list[int | None]:
+    """For each learner unit, the index of its reference unit, or None.
+
+    Labels are sequence-aligned, so a skipped or inserted unit does not
+    shift every later pair. Within a substituted run, units pair by
+    position (a mispronounced word still meets the word it replaced);
+    the surplus of the longer side stays unpaired.
+    """
+    pairs: list[int | None] = [None] * len(learner)
+    matcher = difflib.SequenceMatcher(
+        a=[_unit_key(u.label) for u in learner],
+        b=[_unit_key(u.label) for u in reference],
+        autojunk=False,
+    )
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ("equal", "replace"):
+            for k in range(min(i2 - i1, j2 - j1)):
+                pairs[i1 + k] = j1 + k
+    return pairs
+
+
 def score_utterance(
     learner: AlignmentResult,
     reference: AlignmentResult,
@@ -408,8 +451,8 @@ def score_utterance(
 ) -> ScoreResult:
     """Score a learner utterance against its canonical reference alignment.
 
-    Relative scoring (Day 4): units are paired by position with the
-    reference units, after speaking-rate normalisation. A unit is
+    Relative scoring (Day 4): units are paired with the reference units
+    by label sequence alignment (see pair_units), after speaking-rate normalisation. A unit is
     gated — flagged, gop None, never scored as a learner error — when
     *its own* CTC confidence is below the gate, *or* when the paired
     reference unit is below the gate: a boundary the model cannot
@@ -426,7 +469,8 @@ def score_utterance(
     the mean semitone gap along the warp and each scored unit gets a
     signed ``pitch_delta``. Gated units never get a GOP or pitch_delta.
     """
-    normalised = speaking_rate_normalise(learner.units, reference.units)
+    pairs = pair_units(learner.units, reference.units)
+    normalised = speaking_rate_normalise(learner.units, reference.units, pairs)
     pitch = None
     if learner_pitch is not None and reference_pitch is not None:
         pitch = compare_contours(learner_pitch, reference_pitch)
@@ -439,9 +483,7 @@ def score_utterance(
         # GOP and pitch read the learner's own frames, so they use the
         # original (not rate-normalised) unit boundaries.
         original = learner.units[i]
-        # Paired by index (Day 4): a skipped or inserted word shifts every
-        # later pair. Known limitation until units are sequence-aligned.
-        ref = reference.units[i] if i < len(reference.units) else None
+        ref = reference.units[pairs[i]] if pairs[i] is not None else None
         ref_duration = (ref.end_s - ref.start_s) if ref else None
         duration_ratio = None
         if ref_duration:
@@ -498,9 +540,11 @@ def score_utterance(
     gop_source = None
     if sources:
         gop_source = sources.pop() if len(sources) == 1 else "mixed"
+    paired = {j for j in pairs if j is not None}
     return ScoreResult(
         units=unit_scores,
         overall_gop=overall,
+        skipped=[u.label for j, u in enumerate(reference.units) if j not in paired],
         pitch_dtw_distance=pitch_distance,
         duration_dtw_distance=duration_dtw,
         gop_source=gop_source,
