@@ -12,7 +12,7 @@ struct ScoreView: View {
                 if let contour = report.payload.pitchContour, contour.isComparable {
                     PitchContourChart(contour: contour)
                 } else {
-                    Text("Pitch comparison needs voiced audio from both recordings.")
+                    Text(report.payload.missingPitchMessage)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -25,7 +25,7 @@ struct ScoreView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(Array(report.payload.scores.enumerated()), id: \.offset) { _, score in
-                    PhonemeScoreRow(score: score)
+                    PhonemeScoreRow(score: score, metric: report.payload.pronunciationMetric)
                         .listRowBackground(score.flagged ? Color.orange.opacity(0.14) : nil)
                 }
             }
@@ -41,7 +41,7 @@ struct ScoreView: View {
             case .sample: Label("Sample score", systemImage: "doc.text")
             case .offlineSample: Label("Server unavailable · Sample score", systemImage: "wifi.slash")
             }
-            LabeledContent("Mean GOP") {
+            LabeledContent("Mean \(report.payload.pronunciationMetric)") {
                 if let mean = report.payload.meanGOP {
                     Text(mean, format: .percent.precision(.fractionLength(0))).monospacedDigit()
                 } else {
@@ -49,6 +49,11 @@ struct ScoreView: View {
                 }
             }
             LabeledContent("Flagged", value: report.payload.flaggedCount.formatted())
+            if report.payload.gopSource == "mixed" {
+                Text("Some units use alignment confidence in place of GOP.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if report.payload.flaggedCount > 0 {
                 Text("Flagged units have low alignment confidence and do not count against you.")
                     .font(.footnote)
@@ -60,6 +65,7 @@ struct ScoreView: View {
 
 private struct PhonemeScoreRow: View {
     let score: PhonemeScore
+    let metric: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -78,11 +84,11 @@ private struct PhonemeScoreRow: View {
             }
             if let gop = score.displayGOP {
                 ProgressView(value: gop, total: 1) {
-                    LabeledContent("GOP", value: gop.formatted(.percent.precision(.fractionLength(0))))
+                    LabeledContent(metric, value: gop.formatted(.percent.precision(.fractionLength(0))))
                         .font(.caption)
                 }
             } else {
-                Text("GOP not scored").font(.caption).foregroundStyle(.secondary)
+                Text("Not scored").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 3)
