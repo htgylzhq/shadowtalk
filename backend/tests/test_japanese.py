@@ -34,10 +34,24 @@ def test_small_vowels_and_hiragana():
 
 
 def test_devoicing_between_voiceless_and_at_the_end():
-    assert devoice([["k", "u"], ["tʃ", "a"]]) == [["k"], ["tʃ", "a"]]
-    assert devoice([["m", "a"], ["s", "u"]]) == [["m", "a"], ["s"]]
-    assert devoice([["k", "u"], ["d", "a"]]) == [["k", "u"], ["d", "a"]]
-    assert devoice([["k", "a"], ["t", "a"]]) == [["k", "a"], ["t", "a"]]
+    assert devoice([("ク", ["k", "u"]), ("チャ", ["tʃ", "a"])]) == [("ク", ["k"]), ("チャ", ["tʃ", "a"])]
+    assert devoice([("マ", ["m", "a"]), ("ス", ["s", "u"])]) == [("マ", ["m", "a"]), ("ス", ["s"])]
+    assert devoice([("ク", ["k", "u"]), ("ダ", ["d", "a"])]) == [("ク", ["k", "u"]), ("ダ", ["d", "a"])]
+    assert devoice([("カ", ["k", "a"]), ("タ", ["t", "a"])]) == [("カ", ["k", "a"]), ("タ", ["t", "a"])]
+
+
+def test_long_high_vowels_stay_voiced():
+    units = lesson_units("コーヒー", VOCAB, reading=lambda _: [("コーヒー", "コーヒー")])
+    assert units[-1].token_ids == [VOCAB["x"], VOCAB["i"]]
+    units = lesson_units("スープ", VOCAB, reading=lambda _: [("スープ", "スープ")])
+    assert units[0].token_ids == [VOCAB["s"], VOCAB["u"]]
+
+
+def test_nasal_assimilates_across_words():
+    ga = lesson_units("本が", VOCAB, reading=lambda _: [("本", "ホン"), ("が", "ガ")])
+    mo = lesson_units("本も", VOCAB, reading=lambda _: [("本", "ホン"), ("も", "モ")])
+    assert ga[1].token_ids == [VOCAB["ŋ"]]
+    assert mo[1].token_ids == [VOCAB["m"]]
 
 
 def test_units_per_word_from_reading():
