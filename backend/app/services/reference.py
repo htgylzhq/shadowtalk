@@ -104,8 +104,12 @@ class ReferenceStore:
         pcm16k: bytes,
         language: Language,
         aligner: Aligner | None,
+        text: str | None = None,
     ) -> AlignmentResult:
         """Align a reference recording once; later calls reuse the cache.
+
+        With lesson ``text`` and an aligner that supports it, the units
+        are the text's intended phonemes force-aligned to the recording.
 
         Raises AlignmentUnavailableError when no aligner is configured
         (local dev without the WhisperX stack) — callers surface that
@@ -118,7 +122,11 @@ class ReferenceStore:
             raise AlignmentUnavailableError(
                 "no aligner configured: cannot align reference recording"
             )
-        result = aligner.align(pcm16k, language)
+        align_text = getattr(aligner, "align_text", None)
+        if text and align_text is not None:
+            result = align_text(pcm16k, language, text)
+        else:
+            result = aligner.align(pcm16k, language)
         self._cache[reference_id] = result
         self._pcm[reference_id] = pcm16k
         return result
@@ -130,6 +138,9 @@ class ReferenceStore:
         language: Language,
         aligner: Aligner | None,
     ) -> AlignmentResult:
+        """Align ``<id>.wav``, using ``<id>.txt`` beside it as lesson text."""
+        text_path = Path(wav_path).with_suffix(".txt")
+        text = text_path.read_text(encoding="utf-8").strip() if text_path.exists() else None
         return self.align_reference(
-            reference_id, load_reference_pcm(wav_path), language, aligner
+            reference_id, load_reference_pcm(wav_path), language, aligner, text
         )

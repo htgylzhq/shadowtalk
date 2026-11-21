@@ -12,6 +12,7 @@ the API process can run without them in local development.
 
 from __future__ import annotations
 
+import subprocess
 import tempfile
 import unicodedata
 import wave
@@ -97,6 +98,8 @@ class AlignedUnit:
     # Target token ids of this unit in the CTC head's vocabulary, used
     # for GOP. None when the aligner does not provide them.
     token_ids: list[int] | None = None
+    # Lesson word the unit belongs to (lesson-text G2P); None otherwise.
+    word: str | None = None
 
 
 @dataclass
@@ -119,6 +122,8 @@ class UnitScore:
     # there is no paired reference unit (Day 4: no reference yet).
     duration_ratio: float | None = None
     reference_confidence: float | None = None
+    # Lesson word of the paired reference unit (from lesson-text G2P).
+    word: str | None = None
     # Signed mean semitone difference vs. the reference pitch contour,
     # each side relative to its own speaker's median F0. None when
     # there is no pitch comparison, the unit is gated, or it is unvoiced.
@@ -407,6 +412,18 @@ class Wav2Vec2PhonemeAligner:
         samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
         if samples.size < WAV2VEC2_MIN_SAMPLES:
             return AlignmentResult(language=language, transcript="", units=[])
+        log_probs, blank_id, vocab = self._posteriors(samples)
+        id_to_token = {i: t for t, i in vocab.items()}
+        units = units_from_ctc(log_probs, WAV2VEC2_FRAME_S, blank_id, id_to_token)
+        return AlignmentResult(
+            language=language,
+            transcript=" ".join(u.label for u in units),
+            units=units,
+            posteriors=CTCPosteriors(log_probs, WAV2VEC2_FRAME_S, blank_id),
+        )
+
+
+    def _posteriors(self, samples: np.ndarray) -> tuple[np.ndarray, int, dict[str, int]]:
         self._load()
         import torch  # noqa: PLC0415
 
@@ -416,12 +433,49 @@ class Wav2Vec2PhonemeAligner:
             logits = model(inputs.input_values.to(self.device)).logits[0]  # type: ignore[operator]
             log_probs = torch.log_softmax(logits, dim=-1).cpu().numpy()
         tokenizer = processor.tokenizer  # type: ignore[attr-defined]
-        blank_id = tokenizer.pad_token_id
-        id_to_token = {i: t for t, i in tokenizer.get_vocab().items()}
-        units = units_from_ctc(log_probs, WAV2VEC2_FRAME_S, blank_id, id_to_token)
+        return log_probs, tokenizer.pad_token_id, tokenizer.get_vocab()
+
+    def align_text(self, pcm16k: bytes, language: Language, text: str) -> AlignmentResult:
+        """Force-align the lesson text's phonemes (espeak-ng G2P) to a recording.
+
+        Each unit is one intended phoneme tagged with its lesson word, so
+        the reference targets come from the text instead of a decode of
+        the recording. Falls back to ``align`` when G2P yields nothing or
+        the phonemes do not fit the audio.
+        """
+        from app.services.g2p import lesson_targets  # noqa: PLC0415
+        from app.services.gop import ctc_forced_align  # noqa: PLC0415
+
+        samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
+        if samples.size < WAV2VEC2_MIN_SAMPLES:
+            return AlignmentResult(language=language, transcript="", units=[])
+        log_probs, blank_id, vocab = self._posteriors(samples)
+        try:
+            targets = lesson_targets(text, language, vocab)
+        except (OSError, subprocess.SubprocessError):
+            targets = []  # espeak-ng missing or failed: decode the recording
+        flat = [(word, token) for word, ids in targets for token in ids]
+        spans = ctc_forced_align(log_probs, [t for _, t in flat], blank_id) if flat else None
+        if spans is None:
+            return self.align(pcm16k, language)
+        id_to_token = {i: t for t, i in vocab.items()}
+        probs = np.exp(log_probs)
+        units = []
+        for n, ((word, token), (first, last)) in enumerate(zip(flat, spans)):
+            end = spans[n + 1][0] if n + 1 < len(spans) else last + 1
+            units.append(
+                AlignedUnit(
+                    label=id_to_token[token],
+                    start_s=first * WAV2VEC2_FRAME_S,
+                    end_s=end * WAV2VEC2_FRAME_S,
+                    ctc_confidence=float(probs[first : last + 1, token].mean()),
+                    token_ids=[token],
+                    word=word,
+                )
+            )
         return AlignmentResult(
             language=language,
-            transcript=" ".join(u.label for u in units),
+            transcript=text,
             units=units,
             posteriors=CTCPosteriors(log_probs, WAV2VEC2_FRAME_S, blank_id),
         )
@@ -638,6 +692,7 @@ def score_utterance(
             unit_scores.append(
                 UnitScore(
                     label=unit.label,
+                    word=ref.word if ref is not None and ref.word else unit.word,
                     gop=None,
                     flagged=True,
                     duration_ratio=duration_ratio,
@@ -650,6 +705,7 @@ def score_utterance(
         unit_scores.append(
             UnitScore(
                 label=unit.label,
+                word=ref.word if ref is not None and ref.word else unit.word,
                 gop=gop,
                 duration_ratio=duration_ratio,
                 reference_confidence=ref_conf,
