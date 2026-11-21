@@ -56,4 +56,16 @@ final class ScorePayloadTests: XCTestCase {
         XCTAssertEqual(config.language, "ja")
         XCTAssertThrowsError(try BackendConfiguration(environment: ["SHADOWTALK_BACKEND_URL": "missing-host"]))
     }
+
+    func testPlainHTTPOnlyAllowedOnLoopback() throws {
+        for host in ["localhost", "127.0.0.1", "[::1]"] {
+            let config = try BackendConfiguration(environment: ["SHADOWTALK_BACKEND_URL": "http://\(host):8000"])
+            XCTAssertEqual(config.alignURL.absoluteString, "ws://\(host):8000/ws/align")
+        }
+        for host in ["server.local", "192.168.1.10", "speech.example.org"] {
+            XCTAssertThrowsError(try BackendConfiguration(environment: ["SHADOWTALK_BACKEND_URL": "http://\(host)"])) {
+                XCTAssertEqual(($0 as? URLError)?.code, .appTransportSecurityRequiresSecureConnection)
+            }
+        }
+    }
 }

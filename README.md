@@ -126,8 +126,9 @@ starts without them for local development of the streaming layer.
 
 The app uses `http://localhost:8000` by default. To use another server, set
 `SHADOWTALK_BACKEND_URL` to its HTTP or HTTPS base URL in the **ShadowTalk**
-scheme's Run environment or the app target's build settings. For a physical
-device, use a URL the device can reach rather than `localhost`.
+scheme's Run environment or the app target's build settings. Plain HTTP is
+allowed only on loopback. For a physical device, use a reachable HTTPS URL
+rather than `localhost`.
 
 To compare against a reference, set `SHADOWTALK_REFERENCE_ID` to the basename
 of a WAV in `backend/data/references/` and `SHADOWTALK_LANGUAGE` to its

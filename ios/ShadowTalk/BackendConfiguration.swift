@@ -19,6 +19,10 @@ struct BackendConfiguration {
               scheme == "http" || scheme == "https" else {
             throw URLError(.badURL)
         }
+        let loopbackHosts = ["localhost", "127.0.0.1", "::1", "[::1]"]
+        guard scheme == "https" || loopbackHosts.contains(host.lowercased()) else {
+            throw URLError(.appTransportSecurityRequiresSecureConnection)
+        }
         components.scheme = scheme == "https" ? "wss" : "ws"
         if !components.path.hasSuffix("/") { components.path += "/" }
         components.path += "ws/align"
