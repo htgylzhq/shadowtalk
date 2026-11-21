@@ -347,10 +347,11 @@ async def _score_session(
         "score_version": SCORE_PAYLOAD_VERSION,
         "scores": [
             {
-                # The unit label: word units with WhisperX until a
-                # phoneme-level aligner lands, mora / initial-final where
-                # the aligner emits them.
+                # The unit label: an IPA phoneme with the phoneme aligner,
+                # a word with WhisperX.
                 "phoneme": u.label,
+                # Lesson word of the unit; None without <id>.txt lesson text.
+                "word": u.word,
                 "gop": u.gop,
                 "pitch_delta": u.pitch_delta,
                 "flagged": u.flagged,

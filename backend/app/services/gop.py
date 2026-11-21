@@ -92,6 +92,52 @@ def ctc_viterbi_log_likelihood(
     return float(best)
 
 
+def ctc_forced_align(
+    log_probs: np.ndarray, targets: Sequence[int], blank_id: int = 0
+) -> list[tuple[int, int]] | None:
+    """Frame span ``(first, last)`` of each target token on the best CTC path.
+
+    Same lattice as ``ctc_viterbi_log_likelihood``, with backpointers.
+    Returns None when the frames cannot fit the targets.
+    """
+    frames = int(log_probs.shape[0])
+    if frames == 0 or not targets:
+        return None
+    ext = [blank_id]
+    for token in targets:
+        ext += [int(token), blank_id]
+    states = len(ext)
+    ext_arr = np.asarray(ext)
+    can_skip = np.zeros(states, dtype=bool)
+    for s in range(2, states):
+        can_skip[s] = ext[s] != blank_id and ext[s] != ext[s - 2]
+
+    neg_inf = -np.inf
+    alpha = np.full(states, neg_inf)
+    alpha[0] = log_probs[0, blank_id]
+    alpha[1] = log_probs[0, ext[1]]
+    back = np.zeros((frames, states), dtype=np.int8)  # 0 stay, 1 step, 2 skip
+    for t in range(1, frames):
+        step = np.concatenate(([neg_inf], alpha[:-1]))
+        skip = np.where(can_skip, np.concatenate(([neg_inf, neg_inf], alpha[:-2])), neg_inf)
+        moves = np.stack([alpha, step, skip])
+        back[t] = moves.argmax(axis=0)
+        alpha = moves.max(axis=0) + log_probs[t, ext_arr]
+
+    state = states - 1 if alpha[-1] >= alpha[-2] else states - 2
+    if not np.isfinite(alpha[state]):
+        return None
+    path = np.empty(frames, dtype=int)
+    for t in range(frames - 1, -1, -1):
+        path[t] = state
+        state -= int(back[t, state])
+    spans: list[tuple[int, int]] = []
+    for k in range(len(targets)):
+        hits = np.flatnonzero(path == 2 * k + 1)
+        spans.append((int(hits[0]), int(hits[-1])))
+    return spans
+
+
 def gop_score(
     posteriors: CTCPosteriors,
     token_ids: Sequence[int],
