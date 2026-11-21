@@ -124,6 +124,9 @@ class CrepePitchExtractor:
         return PitchContour(f0, CREPE_HOP_S)
 
 
+MAX_DTW_FRAMES = 400  # 4 s at the 10 ms crepe hop
+
+
 def normalise_per_speaker(contour: PitchContour) -> np.ndarray | None:
     """Semitones relative to the speaker's median voiced F0 (NaN when unvoiced).
 
@@ -141,6 +144,18 @@ def _interpolate_unvoiced(semitones: np.ndarray) -> np.ndarray:
     voiced = np.isfinite(semitones)
     idx = np.arange(semitones.size)
     return np.interp(idx, idx[voiced], semitones[voiced])
+
+
+def _dtw_input(semitones: np.ndarray) -> np.ndarray:
+    """The voiced span, gaps interpolated, at most MAX_DTW_FRAMES long.
+
+    Leading/trailing silence is cut so it is not scored as held pitch,
+    and long clips are decimated so DTW stays O(MAX_DTW_FRAMES**2).
+    """
+    voiced = np.flatnonzero(np.isfinite(semitones))
+    span = _interpolate_unvoiced(semitones[voiced[0] : voiced[-1] + 1])
+    step = -(-span.size // MAX_DTW_FRAMES)
+    return span[::step]
 
 
 def dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
@@ -205,9 +220,7 @@ def compare_contours(
     if learner_st is None or reference_st is None:
         return None
     return PitchComparison(
-        distance=dtw_distance(
-            _interpolate_unvoiced(learner_st), _interpolate_unvoiced(reference_st)
-        ),
+        distance=dtw_distance(_dtw_input(learner_st), _dtw_input(reference_st)),
         learner_semitones=learner_st,
         reference_semitones=reference_st,
         frame_s=learner.frame_s,

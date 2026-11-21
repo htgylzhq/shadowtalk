@@ -368,3 +368,21 @@ def test_ws_rejects_reference_id_that_is_not_a_slug(reference_id):
         assert ws.receive_json() == {"type": "error", "error": "invalid_reference_id"}
         ws.send_json({"type": "start", "language": "ja", "reference_id": "lesson-1_a"})
         assert ws.receive_json()["type"] == "ready"
+
+
+def test_silence_around_speech_does_not_count_as_pitch():
+    speech = rising(180.0)
+    padded = [np.nan] * 30 + speech + [np.nan] * 50
+    cmp = compare_contours(contour(padded), contour(rising(120.0)))
+    assert cmp.distance == pytest.approx(0.0, abs=1e-9)
+
+
+def test_long_recordings_are_bounded_and_still_compared(monkeypatch):
+    import time as _time
+    long_rise = rising(150.0, n=6000)
+    start = _time.monotonic()
+    same = compare_contours(contour(long_rise), contour(rising(200.0, n=5000)))
+    flat = compare_contours(contour([150.0] * 6000), contour(rising(200.0, n=5000)))
+    assert _time.monotonic() - start < 5.0
+    assert same.distance == pytest.approx(0.0, abs=0.05)
+    assert flat.distance > 1.0
