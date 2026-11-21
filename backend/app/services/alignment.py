@@ -389,12 +389,17 @@ class Wav2Vec2PhonemeAligner:
         if self._model is not None:
             return
         try:
-            from transformers import AutoModelForCTC, AutoProcessor  # noqa: PLC0415
+            from transformers import (  # noqa: PLC0415
+                AutoModelForCTC,
+                AutoProcessor,
+            )
         except Exception as exc:
             raise AlignmentUnavailableError(
                 f"transformers + torch are needed for phoneme alignment: {exc}"
             ) from exc
-        self._processor = AutoProcessor.from_pretrained(self.model_name)
+        # Audio-only use: never phonemize text, so phonemizer / espeak-ng
+        # are not needed when the tokenizer loads.
+        self._processor = AutoProcessor.from_pretrained(self.model_name, do_phonemize=False)
         self._model = AutoModelForCTC.from_pretrained(self.model_name).to(self.device).eval()
 
     def align(self, pcm16k: bytes, language: Language) -> AlignmentResult:
