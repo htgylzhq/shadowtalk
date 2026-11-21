@@ -332,6 +332,10 @@ def test_ws_score_payload_v1_with_gop_and_pitch(monkeypatch):
     assert score["pitch"] == "ok"
     assert score["pitch_backend"] == "fake-crepe"
     assert score["pitch_dtw_distance"] == pytest.approx(0.0, abs=1e-9)
+    graph = score["pitch_contour"]
+    assert graph["frame_s"] == pytest.approx(0.01)
+    assert graph["learner"] == pytest.approx(np.linspace(-3.0, 3.0, 60), abs=0.001)
+    assert graph["reference"] == graph["learner"]
     assert score["scores"] == [
         {"phoneme": "こん", "word": None, "gop": pytest.approx(1.0), "pitch_delta": pytest.approx(0.0, abs=1e-9), "tone": None, "tone_distance": None, "flagged": False},
         {"phoneme": "にち", "word": None, "gop": None, "pitch_delta": None, "tone": None, "tone_distance": None, "flagged": True},
@@ -347,6 +351,7 @@ def test_ws_pitch_missing_without_reference_audio(monkeypatch):
     score = _run_ws(reference_id="no-such-lesson")
     assert score["pitch"] == "missing"
     assert score["pitch_dtw_distance"] is None
+    assert "pitch_contour" not in score
     assert score["scores"][0]["pitch_delta"] is None
     assert score["scores"][0]["gop"] == pytest.approx(1.0)
 
@@ -357,8 +362,28 @@ def test_ws_pitch_unavailable_by_default(monkeypatch):
     score = _run_ws()
     assert score["pitch"] == "unavailable"
     assert score["pitch_backend"] is None
+    assert "pitch_contour" not in score
     assert score["score_version"] == 1
     assert score["scores"] == []
+
+
+def test_ws_pitch_contour_preserves_unvoiced_gaps(monkeypatch):
+    class GapPitchExtractor:
+        def extract(self, pcm16k):
+            frequencies = [100.0, np.nan, 200.0] if len(pcm16k) > 640 else [200.0, 400.0]
+            return contour(frequencies)
+
+    monkeypatch.setattr(main, "PITCH_EXTRACTOR", GapPitchExtractor())
+    main.REFERENCE_STORE.register(
+        "s1", AlignmentResult(Language.JAPANESE, "", []), pcm16k=pcm_frame()
+    )
+    try:
+        score = _run_ws()
+    finally:
+        main.REFERENCE_STORE.forget("s1")
+    assert score["pitch_contour"] == {
+        "frame_s": 0.01, "learner": [-6.0, None, 6.0], "reference": [-6.0, 6.0]
+    }
 
 
 @pytest.mark.parametrize("reference_id", ["../sessions/abc", "a/b", "", 7])
