@@ -34,6 +34,10 @@ def test_substitution_pairs_with_the_word_it_replaced():
     assert pair_units(units("i", "lake", "tea"), units("i", "like", "tea")) == [0, 1, 2]
 
 
+def test_substitution_by_a_repeated_word_still_pairs_with_the_replaced_word():
+    assert pair_units(units("no", "no"), units("oh", "no")) == [0, 1]
+
+
 def test_case_and_punctuation_do_not_break_pairing():
     assert pair_units(units("Hello,", "WORLD."), units("hello", "world")) == [0, 1]
 
