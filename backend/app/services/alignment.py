@@ -23,7 +23,7 @@ from typing import Protocol
 
 import numpy as np
 
-from app.services.gop import CTCPosteriors, gop_score
+from app.services.gop import CTCPosteriors, ctc_forced_align, ctc_forced_align_words, gop_score
 from app.services.pitch import PitchContour, compare_contours
 
 
@@ -447,7 +447,6 @@ class Wav2Vec2PhonemeAligner:
         the phonemes do not fit the audio.
         """
         from app.services.g2p import lesson_targets  # noqa: PLC0415
-        from app.services.gop import ctc_forced_align  # noqa: PLC0415
 
         samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
         if samples.size < WAV2VEC2_MIN_SAMPLES:
@@ -632,6 +631,83 @@ def pair_units(
     return pairs
 
 
+def force_to_reference(
+    learner: AlignmentResult, reference: AlignmentResult
+) -> tuple[AlignmentResult, list[int | None]] | None:
+    """Force-align the reference's lesson phonemes onto the learner's posteriors.
+
+    Only for a reference built from lesson text (every unit has a
+    ``word`` and ``token_ids``) and a learner aligner that keeps its CTC
+    posteriors. Each learner unit is then the intended phoneme over the
+    learner's own frames, so a phoneme the free decode would miss is
+    still scored. Whole lesson words may be left out of the alignment
+    (ctc_forced_align_words), so a word the learner skipped is reported
+    as skipped instead of being stretched over the next word's audio; a
+    kept word whose frames the model hears only as blank is dropped too.
+
+    Returns the learner result and its pairs into ``reference.units``,
+    or None to fall back to free-decoded units and ``pair_units``.
+    """
+    post = learner.posteriors
+    refs = reference.units
+    if post is None or not refs or any(u.word is None or not u.token_ids for u in refs):
+        return None
+    # A word is a run of consecutive units with the same lesson word.
+    groups: list[list[int]] = []
+    for j, u in enumerate(refs):
+        if groups and refs[groups[-1][-1]].word == u.word:
+            groups[-1].append(j)
+        else:
+            groups.append([j])
+    aligned = ctc_forced_align_words(
+        post.log_probs,
+        [[t for j in g for t in refs[j].token_ids or []] for g in groups],
+        post.blank_id,
+    )
+    if aligned is None:
+        return None
+    top = post.log_probs.argmax(axis=-1)
+    top_p = np.exp(post.log_probs.max(axis=-1))
+    first: dict[int, int] = {}
+    last: dict[int, int] = {}
+    for g, spans in zip(groups, aligned):
+        if spans is None:
+            continue  # the lattice skipped the whole word
+        k = 0
+        for j in g:
+            n = len(refs[j].token_ids or [])
+            first[j], last[j] = spans[k][0], spans[k + n - 1][1]
+            k += n
+        # Forced onto frames the model hears as blank only: not said either.
+        if not any((top[first[j] : last[j] + 1] != post.blank_id).any() for j in g):
+            for j in g:
+                del first[j], last[j]
+    kept = sorted(first)
+    units: list[AlignedUnit] = []
+    pairs: list[int | None] = []
+    for n, j in enumerate(kept):
+        u = refs[j]
+        end = first[kept[n + 1]] if n + 1 < len(kept) else last[j] + 1
+        units.append(
+            AlignedUnit(
+                label=u.label,
+                start_s=first[j] * post.frame_s,
+                end_s=end * post.frame_s,
+                ctc_confidence=float(top_p[first[j] : last[j] + 1].mean()),
+                token_ids=u.token_ids,
+                word=u.word,
+            )
+        )
+        pairs.append(j)
+    forced = AlignmentResult(
+        language=learner.language,
+        transcript=reference.transcript,
+        units=units,
+        posteriors=post,
+    )
+    return forced, pairs
+
+
 def score_utterance(
     learner: AlignmentResult,
     reference: AlignmentResult,
@@ -651,6 +727,10 @@ def score_utterance(
     comparison separately from pronunciation, so a slow-but-correct
     unit is not misread as mispronounced.
 
+    With a lesson-text reference, the learner units are the lesson
+    phonemes force-aligned to the learner's frames (see
+    force_to_reference) instead of a free decode.
+
     Day 5: GOP comes from the learner's CTC posteriors when the aligner
     provides them (``gop_source`` "ctc_posteriors"), and a unit whose
     frames cannot fit its own target tokens is gated like a
@@ -659,7 +739,11 @@ def score_utterance(
     the mean semitone gap along the warp and each scored unit gets a
     signed ``pitch_delta``. Gated units never get a GOP or pitch_delta.
     """
-    pairs = pair_units(learner.units, reference.units)
+    forced = force_to_reference(learner, reference)
+    if forced is not None:
+        learner, pairs = forced
+    else:
+        pairs = pair_units(learner.units, reference.units)
     normalised = speaking_rate_normalise(learner.units, reference.units, pairs)
     pitch = None
     if learner_pitch is not None and reference_pitch is not None:
