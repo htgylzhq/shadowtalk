@@ -386,3 +386,19 @@ def test_long_recordings_are_bounded_and_still_compared(monkeypatch):
     assert _time.monotonic() - start < 5.0
     assert same.distance == pytest.approx(0.0, abs=0.05)
     assert flat.distance > 1.0
+
+
+def test_gop_scores_the_reference_unit_not_a_substituted_word():
+    # The learner said B where the reference has A; the model hears B clearly.
+    learner = AlignmentResult(
+        language=Language.ENGLISH,
+        transcript="b",
+        units=[AlignedUnit("b", 0.0, 0.10, 0.9, [B])],
+        posteriors=posteriors([{B: 0.9}] * 5),
+    )
+    reference = AlignmentResult(
+        language=Language.ENGLISH,
+        transcript="a",
+        units=[AlignedUnit("a", 0.0, 0.10, 0.9, [A])],
+    )
+    assert score_utterance(learner, reference).units[0].gop < 0.1
