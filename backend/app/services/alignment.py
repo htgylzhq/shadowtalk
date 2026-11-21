@@ -432,22 +432,28 @@ def pair_units(
     # Edit-distance alignment: match 0, substitution 1, skip/insert 1.
     # A substitution beats a skip + insert, so "no no" vs "oh no" pairs
     # the wrong first word with "oh" instead of reporting "oh" skipped.
+    # Equal-cost alignments are broken by the most exact matches, so
+    # "i um like tea" vs "i like hot tea" keeps "like" with "like".
     n, m = len(a), len(b)
-    cost = [[i + j if i == 0 or j == 0 else 0 for j in range(m + 1)] for i in range(n + 1)]
+    # cost[i][j] = (edits, -exact matches), compared lexicographically.
+    cost = [[(i + j, 0) for j in range(m + 1)] for i in range(n + 1)]
+
+    def diagonal(i: int, j: int) -> tuple[int, int]:
+        edits, neg_matches = cost[i - 1][j - 1]
+        same = a[i - 1] == b[j - 1]
+        return (edits + (not same), neg_matches - same)
+
     for i in range(1, n + 1):
         for j in range(1, m + 1):
-            cost[i][j] = min(
-                cost[i - 1][j - 1] + (a[i - 1] != b[j - 1]),
-                cost[i - 1][j] + 1,
-                cost[i][j - 1] + 1,
-            )
+            up, left = cost[i - 1][j], cost[i][j - 1]
+            cost[i][j] = min(diagonal(i, j), (up[0] + 1, up[1]), (left[0] + 1, left[1]))
     pairs: list[int | None] = [None] * n
     i, j = n, m
     while i > 0 and j > 0:
-        if cost[i][j] == cost[i - 1][j - 1] + (a[i - 1] != b[j - 1]):
+        if cost[i][j] == diagonal(i, j):
             pairs[i - 1] = j - 1
             i, j = i - 1, j - 1
-        elif cost[i][j] == cost[i - 1][j] + 1:
+        elif cost[i][j] == (cost[i - 1][j][0] + 1, cost[i - 1][j][1]):
             i -= 1
         else:
             j -= 1

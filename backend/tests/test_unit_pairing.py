@@ -38,6 +38,10 @@ def test_substitution_by_a_repeated_word_still_pairs_with_the_replaced_word():
     assert pair_units(units("no", "no"), units("oh", "no")) == [0, 1]
 
 
+def test_equal_cost_alignment_keeps_exact_matches():
+    assert pair_units(units("i", "um", "like", "tea"), units("i", "like", "hot", "tea")) == [0, None, 1, 3]
+
+
 def test_case_and_punctuation_do_not_break_pairing():
     assert pair_units(units("Hello,", "WORLD."), units("hello", "world")) == [0, 1]
 
