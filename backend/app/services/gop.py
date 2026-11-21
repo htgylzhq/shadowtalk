@@ -138,6 +138,89 @@ def ctc_forced_align(
     return spans
 
 
+SKIP_WORD_LOG_PENALTY = -3.0
+
+
+def ctc_forced_align_words(
+    log_probs: np.ndarray,
+    words: Sequence[Sequence[int]],
+    blank_id: int = 0,
+    skip_log_penalty: float = SKIP_WORD_LOG_PENALTY,
+) -> list[list[tuple[int, int]] | None] | None:
+    """Forced alignment where whole words may be left out.
+
+    The lattice of ``ctc_forced_align`` plus a jump from the blank
+    before word ``w`` to the blank before word ``w + 1`` (one blank frame,
+    plus ``skip_log_penalty``), so a word the speaker never said is
+    skipped instead of being stretched over a neighbouring word's audio.
+    Returns, per word, the ``(first, last)`` frame span of each token, or
+    None for a skipped word; None overall when nothing fits.
+    """
+    frames = int(log_probs.shape[0])
+    if frames == 0 or not words or not any(words):
+        return None
+    ext = [blank_id]
+    blank_before: list[int] = []
+    token_state: list[list[int]] = []
+    for word in words:
+        blank_before.append(len(ext) - 1)
+        states_w = []
+        for token in word:
+            states_w.append(len(ext))
+            ext += [int(token), blank_id]
+        token_state.append(states_w)
+    states = len(ext)
+    blank_before.append(states - 1)
+    ext_arr = np.asarray(ext)
+    can_skip = np.zeros(states, dtype=bool)
+    for s in range(2, states):
+        can_skip[s] = ext[s] != blank_id and ext[s] != ext[s - 2]
+    jumps = [
+        (blank_before[w], blank_before[w + 1])
+        for w in range(len(words))
+        if blank_before[w] != blank_before[w + 1]
+    ]
+
+    neg_inf = -np.inf
+    idx = np.arange(states)
+    alpha = np.full(states, neg_inf)
+    alpha[0] = log_probs[0, blank_id]
+    alpha[1] = log_probs[0, ext[1]]
+    back = np.zeros((frames, states), dtype=np.int32)
+    for t in range(1, frames):
+        step = np.concatenate(([neg_inf], alpha[:-1]))
+        skip = np.where(can_skip, np.concatenate(([neg_inf, neg_inf], alpha[:-2])), neg_inf)
+        moves = np.stack([alpha, step, skip])
+        choice = moves.argmax(axis=0)
+        best = moves.max(axis=0)
+        pred = idx - choice
+        for src, dst in jumps:
+            cand = alpha[src] + skip_log_penalty
+            if cand > best[dst]:
+                best[dst] = cand
+                pred[dst] = src
+        back[t] = pred
+        alpha = best + log_probs[t, ext_arr]
+
+    state = states - 1 if alpha[-1] >= alpha[-2] else states - 2
+    if not np.isfinite(alpha[state]):
+        return None
+    path = np.empty(frames, dtype=int)
+    for t in range(frames - 1, -1, -1):
+        path[t] = state
+        state = int(back[t, state]) if t else state
+    out: list[list[tuple[int, int]] | None] = []
+    for states_w in token_state:
+        spans = []
+        for st in states_w:
+            hits = np.flatnonzero(path == st)
+            if hits.size == 0:
+                break
+            spans.append((int(hits[0]), int(hits[-1])))
+        out.append(spans if len(spans) == len(states_w) and spans else None)
+    return out
+
+
 def gop_score(
     posteriors: CTCPosteriors,
     token_ids: Sequence[int],
