@@ -1,129 +1,220 @@
 import AVFoundation
+import Combine
 import Foundation
 
-/// Captures microphone audio for shadowing and streams it to the backend.
-///
-/// Design constraints (see README):
-/// - Native AVFoundation only — no cross-platform audio layer.
-/// - AVAudioSession in .playAndRecord so reference playback and capture
-///   can overlap, as shadowing requires.
-/// - Capture is converted to 16 kHz mono PCM and chunked into 20 ms
-///   frames (320 samples) for the /ws/align WebSocket.
+struct ScoreReport {
+    let payload: ScorePayload
+    let source: Source
+
+    enum Source {
+        case recording, sample, offlineSample
+    }
+}
+
 @MainActor
 final class RecorderViewModel: ObservableObject {
-    @Published private(set) var isRecording = false
-    @Published private(set) var lastScore: Double?
+    enum Phase {
+        case idle, preparing, recording, recordingOffline, scoring
 
-    private let engine = AVAudioEngine()
-    private var converter: AVAudioConverter?
-
-    /// Callback for each 20 ms PCM frame; the transport layer forwards
-    /// these to the backend WebSocket as Opus frames.
-    var onFrame: ((Data) -> Void)?
-
-    /// Day 2 transport: streams frames to /ws/align and receives the
-    /// VAD endpoint + score. Defaults to the local backend.
-    private let socket = AlignSocket()
-    var language = "ja"
-    var referenceId: String?
-    @Published private(set) var connectionState = "未连接"
-
-    init() {
-        socket.onScore = { [weak self] gop in
-            Task { @MainActor in self?.lastScore = gop }
-        }
-        socket.onEndpoint = { [weak self] _ in
-            // VAD decided the utterance ended; the score follows.
-            Task { @MainActor in self?.stopEngineOnly() }
-        }
-        socket.onStateChange = { [weak self] state in
-            Task { @MainActor in self?.connectionState = state.rawValue }
-        }
-        // Forward every recorder frame to the backend as it arrives.
-        onFrame = { [weak self] data in self?.socket.sendFrame(data) }
+        var isRecording: Bool { self == .recording || self == .recordingOffline }
     }
 
-    private static let targetFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16,
-        sampleRate: 16_000,
-        channels: 1,
-        interleaved: true
-    )!
+    @Published private(set) var phase: Phase = .idle
+    @Published private(set) var error: String?
+    @Published var report: ScoreReport?
 
-    func start() {
-        socket.connect()
-        socket.sendStart(language: language, referenceId: referenceId)
-        let session = AVAudioSession.sharedInstance()
-        do {
-            try session.setCategory(.playAndRecord, mode: .spokenAudio,
-                                    options: [.duckOthers, .allowBluetooth])
-            try session.setActive(true)
-        } catch {
-            print("Audio session setup failed: \(error)")
+    private lazy var engine = AVAudioEngine()
+    private var frames: AsyncStream<AlignSocket.Frame>.Continuation?
+    private var scoringTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var isReady = false
+
+    func start() async {
+        guard phase == .idle else { return }
+        error = nil
+        phase = .preparing
+        guard await AVAudioApplication.requestRecordPermission() else {
+            fail("Microphone access is off. Allow it in Settings or view a sample score.")
             return
         }
 
-        let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        converter = AVAudioConverter(from: inputFormat, to: Self.targetFormat)
-
-        // 1024-frame tap buffer; frames are re-chunked to 20 ms below.
-        input.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) {
-            [weak self] buffer, _ in
-            self?.convertAndEmit(buffer)
+        let configuration: BackendConfiguration
+        do {
+            configuration = try BackendConfiguration()
+        } catch {
+            fail("The scoring server URL is invalid.")
+            return
         }
 
-        engine.prepare()
+        let stream = AsyncStream.makeStream(of: AlignSocket.Frame.self)
         do {
-            try engine.start()
-            isRecording = true
+            try startCapture(stream.continuation)
         } catch {
-            print("Audio engine start failed: \(error)")
+            fail("Could not start recording. Check your microphone and try again.")
+            return
+        }
+        frames = stream.continuation
+        phase = .recording
+        isReady = false
+        scoringTask = Task {
+            do {
+                let payload = try await AlignSocket(configuration: configuration).score(
+                    frames: stream.stream,
+                    onReady: { [weak self] in
+                        guard !Task.isCancelled else { return }
+                        self?.isReady = true
+                    },
+                    onEndpoint: { [weak self] in
+                        guard !Task.isCancelled else { return }
+                        self?.endRecording(sendEnd: false)
+                    }
+                )
+                guard !Task.isCancelled else { return }
+                finish()
+                report = ScoreReport(payload: payload, source: .recording)
+            } catch {
+                guard !Task.isCancelled else { return }
+                if error is AlignSocket.ProtocolError {
+                    fail("The scoring server didn’t return a valid result.")
+                } else if phase.isRecording {
+                    phase = .recordingOffline
+                } else {
+                    finish()
+                    showSample(source: .offlineSample)
+                }
+            }
         }
     }
 
     func stop() {
-        socket.sendEnd()
-        stopEngineOnly()
+        endRecording(sendEnd: true)
     }
 
-    /// Stops capture without sending another "end" (used when the
-    /// server already endpointed the utterance via VAD).
-    private func stopEngineOnly() {
+    private func endRecording(sendEnd: Bool) {
+        guard phase.isRecording else { return }
+        if phase == .recordingOffline {
+            finish()
+            showSample(source: .offlineSample)
+            return
+        }
+        stopCapture(sendEnd: sendEnd)
+        phase = .scoring
+        timeoutTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(30))
+            } catch { return }
+            if isReady {
+                fail("The scoring server took too long to respond. Try again.")
+            } else {
+                finish()
+                showSample(source: .offlineSample)
+            }
+        }
+    }
+
+    func showSample(source: ScoreReport.Source = .sample) {
+        error = nil
+        do {
+            report = ScoreReport(payload: try .sample(), source: source)
+        } catch {
+            fail("The sample score couldn’t be loaded.")
+        }
+    }
+
+    private func startCapture(_ continuation: AsyncStream<AlignSocket.Frame>.Continuation) throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        try session.setActive(true)
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0,
+              let encoder = PCMFrameEncoder(inputFormat: format, continuation: continuation) else {
+            try? session.setActive(false)
+            throw RecorderError.invalidInputFormat
+        }
+        encoder.installTap(on: input, format: format)
+        do {
+            try engine.start()
+        } catch {
+            input.removeTap(onBus: 0)
+            try? session.setActive(false)
+            throw error
+        }
+    }
+
+    private func stopCapture(sendEnd: Bool = false) {
         engine.stop()
         engine.inputNode.removeTap(onBus: 0)
         try? AVAudioSession.sharedInstance().setActive(false)
-        isRecording = false
+        if sendEnd { frames?.yield(.end) }
+        frames?.finish()
+        frames = nil
     }
 
-    private func convertAndEmit(_ buffer: AVAudioPCMBuffer) {
-        guard let converter else { return }
+    private func finish() {
+        if phase.isRecording { stopCapture() }
+        timeoutTask?.cancel()
+        timeoutTask = nil
+        scoringTask?.cancel()
+        scoringTask = nil
+        phase = .idle
+    }
+
+    private func fail(_ message: String) {
+        finish()
+        error = message
+    }
+
+    private enum RecorderError: Error {
+        case invalidInputFormat
+    }
+}
+
+private final class PCMFrameEncoder {
+    private static let targetFormat = AVAudioFormat(
+        commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true
+    )!
+    private static let frameBytes = 640
+
+    private let converter: AVAudioConverter
+    private let continuation: AsyncStream<AlignSocket.Frame>.Continuation
+    private var pending = Data()
+
+    init?(inputFormat: AVAudioFormat, continuation: AsyncStream<AlignSocket.Frame>.Continuation) {
+        guard let converter = AVAudioConverter(from: inputFormat, to: Self.targetFormat) else { return nil }
+        self.converter = converter
+        self.continuation = continuation
+    }
+
+    func installTap(on input: AVAudioInputNode, format: AVAudioFormat) {
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { [self] buffer, _ in
+            encode(buffer)
+        }
+    }
+
+    private func encode(_ buffer: AVAudioPCMBuffer) {
         let ratio = Self.targetFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let converted = AVAudioPCMBuffer(
+        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * ratio))
+        guard capacity > 0, let converted = AVAudioPCMBuffer(
             pcmFormat: Self.targetFormat, frameCapacity: capacity
         ) else { return }
 
-        var error: NSError?
-        converter.convert(to: converted, error: &error) { _, status in
+        var suppliedInput = false
+        let status = converter.convert(to: converted, error: nil) { _, status in
+            if suppliedInput {
+                status.pointee = .noDataNow
+                return nil
+            }
+            suppliedInput = true
             status.pointee = .haveData
             return buffer
         }
-        if let error {
-            print("Conversion failed: \(error)")
-            return
-        }
+        guard status != .error, let channel = converted.int16ChannelData?[0] else { return }
 
-        // Emit 20 ms frames: 320 samples * 2 bytes = 640 bytes of PCM16.
-        guard let channel = converted.int16ChannelData?[0] else { return }
-        let frameSamples = 320
-        let totalSamples = Int(converted.frameLength)
-        var offset = 0
-        while offset + frameSamples <= totalSamples {
-            let data = Data(bytes: channel + offset,
-                            count: frameSamples * MemoryLayout<Int16>.size)
-            onFrame?(data)
-            offset += frameSamples
+        pending.append(Data(bytes: channel, count: Int(converted.frameLength) * MemoryLayout<Int16>.size))
+        while pending.count >= Self.frameBytes {
+            continuation.yield(.audio(Data(pending.prefix(Self.frameBytes))))
+            pending.removeFirst(Self.frameBytes)
         }
     }
 }
