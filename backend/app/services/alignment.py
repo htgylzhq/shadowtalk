@@ -12,7 +12,6 @@ the API process can run without them in local development.
 
 from __future__ import annotations
 
-import difflib
 import tempfile
 import unicodedata
 import wave
@@ -425,20 +424,33 @@ def pair_units(
     """For each learner unit, the index of its reference unit, or None.
 
     Labels are sequence-aligned, so a skipped or inserted unit does not
-    shift every later pair. Within a substituted run, units pair by
-    position (a mispronounced word still meets the word it replaced);
-    the surplus of the longer side stays unpaired.
+    shift every later pair, and a substituted unit still meets the
+    reference unit it replaced.
     """
-    pairs: list[int | None] = [None] * len(learner)
-    matcher = difflib.SequenceMatcher(
-        a=[_unit_key(u.label) for u in learner],
-        b=[_unit_key(u.label) for u in reference],
-        autojunk=False,
-    )
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag in ("equal", "replace"):
-            for k in range(min(i2 - i1, j2 - j1)):
-                pairs[i1 + k] = j1 + k
+    a = [_unit_key(u.label) for u in learner]
+    b = [_unit_key(u.label) for u in reference]
+    # Edit-distance alignment: match 0, substitution 1, skip/insert 1.
+    # A substitution beats a skip + insert, so "no no" vs "oh no" pairs
+    # the wrong first word with "oh" instead of reporting "oh" skipped.
+    n, m = len(a), len(b)
+    cost = [[i + j if i == 0 or j == 0 else 0 for j in range(m + 1)] for i in range(n + 1)]
+    for i in range(1, n + 1):
+        for j in range(1, m + 1):
+            cost[i][j] = min(
+                cost[i - 1][j - 1] + (a[i - 1] != b[j - 1]),
+                cost[i - 1][j] + 1,
+                cost[i][j - 1] + 1,
+            )
+    pairs: list[int | None] = [None] * n
+    i, j = n, m
+    while i > 0 and j > 0:
+        if cost[i][j] == cost[i - 1][j - 1] + (a[i - 1] != b[j - 1]):
+            pairs[i - 1] = j - 1
+            i, j = i - 1, j - 1
+        elif cost[i][j] == cost[i - 1][j] + 1:
+            i -= 1
+        else:
+            j -= 1
     return pairs
 
 
