@@ -117,10 +117,10 @@ def test_lesson_units_routes_mandarin_and_keeps_one_token_units_elsewhere(monkey
 
 
 def test_decoded_tokens_group_into_initials_and_finals():
-    labels = ["n", "iɜ", "x", "ɑu2", "t", "iɛ2", "n", "n", "i2", "ərɜ"]
+    labels = ["n", "iɜ", "x", "ɑu2", "t", "iɛ2", "n", "n", "i2", "ərɜ", "f", "k"]
     decoded = [AlignedUnit(lab, i * 0.1, i * 0.1 + 0.1, 0.8, token_ids=[i]) for i, lab in enumerate(labels)]
     grouped = mandarin.group_initial_final(decoded)
-    assert [u.label for u in grouped] == ["n", "iɜ", "x", "ɑu2", "t", "iɛ2n", "n", "i2", "ərɜ"]
+    assert [u.label for u in grouped] == ["n", "iɜ", "x", "ɑu2", "t", "iɛ2n", "n", "i2", "ərɜ", "f", "k"]
     final = grouped[5]
     assert (final.start_s, final.end_s, final.token_ids) == (0.5, pytest.approx(0.7), [5, 6])
     assert all(u.tone is None for u in grouped)
