@@ -24,7 +24,7 @@ from typing import Protocol
 import numpy as np
 
 from app.services.gop import CTCPosteriors, ctc_forced_align, ctc_forced_align_words, gop_score
-from app.services.pitch import PitchContour, compare_contours
+from app.services.pitch import PitchComparison, PitchContour, compare_contours
 
 
 class Language(str, Enum):
@@ -100,6 +100,10 @@ class AlignedUnit:
     token_ids: list[int] | None = None
     # Lesson word the unit belongs to (lesson-text G2P); None otherwise.
     word: str | None = None
+    # Position of that word in the lesson text; None without lesson text.
+    word_index: int | None = None
+    # Mandarin lexical tone (1-4, 5 = neutral) on a final; None otherwise.
+    tone: int | None = None
 
 
 @dataclass
@@ -131,6 +135,12 @@ class UnitScore:
     # "ctc_posteriors" (real GOP) or "ctc_confidence" (fallback when the
     # aligner exposes no posteriors). None when the unit is gated.
     gop_source: str | None = None
+    # Mandarin finals: the reference's lexical tone (None when unknown)
+    # and the RMS semitone gap between the learner's and reference's
+    # pitch shapes over the final, each mean-centred so only the contour
+    # counts. None off Mandarin finals or without usable pitch.
+    tone: int | None = None
+    tone_distance: float | None = None
 
 
 @dataclass
@@ -419,6 +429,10 @@ class Wav2Vec2PhonemeAligner:
     ) -> AlignmentResult:
         id_to_token = {i: t for t, i in vocab.items()}
         units = units_from_ctc(log_probs, WAV2VEC2_FRAME_S, blank_id, id_to_token)
+        if language is Language.MANDARIN:
+            from app.services.mandarin import group_initial_final  # noqa: PLC0415
+
+            units = group_initial_final(units)
         return AlignmentResult(
             language=language,
             transcript=" ".join(u.label for u in units),
@@ -446,33 +460,41 @@ class Wav2Vec2PhonemeAligner:
         the recording. Falls back to ``align`` when G2P yields nothing or
         the phonemes do not fit the audio.
         """
-        from app.services.g2p import lesson_targets  # noqa: PLC0415
+        from app.services.g2p import lesson_units  # noqa: PLC0415
 
         samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
         if samples.size < WAV2VEC2_MIN_SAMPLES:
             return AlignmentResult(language=language, transcript="", units=[])
         log_probs, blank_id, vocab = self._posteriors(samples)
         try:
-            targets = lesson_targets(text, language, vocab)
+            targets = lesson_units(text, language, vocab)
         except (OSError, subprocess.SubprocessError):
             targets = []  # espeak-ng missing or failed: decode the recording
-        flat = [(word, token) for word, ids in targets for token in ids]
-        spans = ctc_forced_align(log_probs, [t for _, t in flat], blank_id) if flat else None
+        flat = [t for target in targets for t in target.token_ids]
+        spans = ctc_forced_align(log_probs, flat, blank_id) if flat else None
         if spans is None:
             return self._decoded(log_probs, blank_id, vocab, language)
-        id_to_token = {i: t for t, i in vocab.items()}
         probs = np.exp(log_probs)
         units = []
-        for n, ((word, token), (first, last)) in enumerate(zip(flat, spans)):
-            end = spans[n + 1][0] if n + 1 < len(spans) else last + 1
+        k = 0
+        for target in targets:
+            n = len(target.token_ids)
+            first, last = spans[k][0], spans[k + n - 1][1]
+            k += n
+            end = spans[k][0] if k < len(spans) else last + 1
+            confidence = np.mean(
+                [probs[a : b + 1, t].mean() for t, (a, b) in zip(target.token_ids, spans[k - n : k])]
+            )
             units.append(
                 AlignedUnit(
-                    label=id_to_token[token],
+                    label=target.label,
                     start_s=first * WAV2VEC2_FRAME_S,
                     end_s=end * WAV2VEC2_FRAME_S,
-                    ctc_confidence=float(probs[first : last + 1, token].mean()),
-                    token_ids=[token],
-                    word=word,
+                    ctc_confidence=float(confidence),
+                    token_ids=list(target.token_ids),
+                    word=target.word,
+                    word_index=target.word_index,
+                    tone=target.tone,
                 )
             )
         return AlignmentResult(
@@ -652,10 +674,12 @@ def force_to_reference(
     refs = reference.units
     if post is None or not refs or any(u.word is None or not u.token_ids for u in refs):
         return None
-    # A word is a run of consecutive units with the same lesson word.
+    # A word is a run of consecutive units with the same lesson word
+    # (and word position, when the reference records it).
     groups: list[list[int]] = []
     for j, u in enumerate(refs):
-        if groups and refs[groups[-1][-1]].word == u.word:
+        prev = refs[groups[-1][-1]] if groups else None
+        if prev is not None and (prev.word, prev.word_index) == (u.word, u.word_index):
             groups[-1].append(j)
         else:
             groups.append([j])
@@ -696,6 +720,8 @@ def force_to_reference(
                 ctc_confidence=float(top_p[first[j] : last[j] + 1].mean()),
                 token_ids=u.token_ids,
                 word=u.word,
+                word_index=u.word_index,
+                tone=u.tone,
             )
         )
         pairs.append(j)
@@ -706,6 +732,27 @@ def force_to_reference(
         posteriors=post,
     )
     return forced, pairs
+
+
+def _tone_fields(
+    language: Language,
+    unit: AlignedUnit,
+    ref: AlignedUnit | None,
+    pitch: PitchComparison | None,
+) -> dict[str, float | int | None]:
+    """``tone`` / ``tone_distance`` for a scored Mandarin final."""
+    if language is not Language.MANDARIN or ref is None:
+        return {}
+    from app.services.mandarin import is_final  # noqa: PLC0415
+
+    if not is_final(ref.label):
+        return {}
+    distance = None
+    if pitch is not None:
+        distance = pitch.unit_shape_distance(
+            (unit.start_s, unit.end_s), (ref.start_s, ref.end_s)
+        )
+    return {"tone": ref.tone, "tone_distance": distance}
 
 
 def score_utterance(
@@ -804,6 +851,7 @@ def score_utterance(
                     else None
                 ),
                 gop_source=source,
+                **_tone_fields(learner.language, original, ref, pitch),
             )
         )
     overall = sum(scored) / len(scored) if scored else None

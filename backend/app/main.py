@@ -347,13 +347,17 @@ async def _score_session(
         "score_version": SCORE_PAYLOAD_VERSION,
         "scores": [
             {
-                # The unit label: an IPA phoneme with the phoneme aligner,
-                # a word with WhisperX.
+                # The unit label: an IPA phoneme with the phoneme aligner
+                # (a Mandarin initial or toned final), a word with WhisperX.
                 "phoneme": u.label,
                 # Lesson word of the unit; None without <id>.txt lesson text.
                 "word": u.word,
                 "gop": u.gop,
                 "pitch_delta": u.pitch_delta,
+                # Mandarin finals only: lexical tone (1-4, 5 = neutral) and
+                # the RMS semitone gap of the pitch shape vs. the reference.
+                "tone": u.tone,
+                "tone_distance": u.tone_distance,
                 "flagged": u.flagged,
             }
             for u in result.units
