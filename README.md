@@ -142,8 +142,9 @@ recording, not the dynamic time warping path.
 Run the model and recorder flow tests with **Product > Test** on an iPhone
 simulator. The offline recording test needs simulator microphone access.
 
-For the opt-in live WebSocket and recorder tests, start the fixture backend
-from `backend/` with `PYTHONPATH=. .venv/bin/python tests/score_screen_fixture.py`.
+For the opt-in live WebSocket and recorder tests, install `pytest` and `httpx`
+in the backend environment. Start the fixture backend from `backend/` with
+`PYTHONPATH=. .venv/bin/python tests/score_screen_fixture.py`.
 Run `xcodebuild test` with `TEST_RUNNER_SHADOWTALK_FIXTURE_URL=http://127.0.0.1:8766`
 in its environment. The fixture exercises the real API with synthetic alignment
 and pitch data. The recorder test also needs a working simulator audio input.
