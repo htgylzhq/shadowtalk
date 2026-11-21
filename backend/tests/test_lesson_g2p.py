@@ -95,6 +95,7 @@ def test_align_text_falls_back_to_decoding_when_g2p_gives_nothing(monkeypatch):
     log_probs = frames(0, 1, 1, 0, 2, 2, 0)
     monkeypatch.setattr(aligner, "_posteriors", lambda samples: (log_probs, 0, VOCAB))
     monkeypatch.setattr(g2p, "espeak_ipa", lambda word, language: "")
+    monkeypatch.setattr(aligner, "align", lambda *a: pytest.fail("ran the model twice"))
     result = aligner.align_text(b"\x00\x00" * 800, Language.ENGLISH, "tea")
     assert [u.label for u in result.units] == ["t", "iː"]
     assert all(u.word is None for u in result.units)
