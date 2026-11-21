@@ -316,6 +316,7 @@ class WhisperXAligner:
 
 PHONEME_MODEL = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
 WAV2VEC2_FRAME_S = 320 / 16_000  # conv feature-extractor stride
+WAV2VEC2_MIN_SAMPLES = 400  # receptive field of one output frame
 
 
 def units_from_ctc(
@@ -403,10 +404,12 @@ class Wav2Vec2PhonemeAligner:
         self._model = AutoModelForCTC.from_pretrained(self.model_name).to(self.device).eval()
 
     def align(self, pcm16k: bytes, language: Language) -> AlignmentResult:
+        samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
+        if samples.size < WAV2VEC2_MIN_SAMPLES:
+            return AlignmentResult(language=language, transcript="", units=[])
         self._load()
         import torch  # noqa: PLC0415
 
-        samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
         processor, model = self._processor, self._model
         inputs = processor(samples, sampling_rate=16_000, return_tensors="pt")  # type: ignore[operator]
         with torch.inference_mode():

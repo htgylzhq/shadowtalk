@@ -7,7 +7,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app import main  # noqa: E402
-from app.services.alignment import Wav2Vec2PhonemeAligner, units_from_ctc  # noqa: E402
+from app.services.alignment import (  # noqa: E402
+    Language,
+    Wav2Vec2PhonemeAligner,
+    units_from_ctc,
+)
 
 BLANK = 0
 VOCAB = {0: "<pad>", 1: "t", 2: "iː", 3: "aɪ"}
@@ -44,3 +48,11 @@ def test_environment_selects_phoneme_aligner(monkeypatch):
     aligner = main.default_aligner()
     assert isinstance(aligner, Wav2Vec2PhonemeAligner)
     assert aligner.model_name == "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
+
+
+@pytest.mark.parametrize("pcm", [b"", b"\x00\x00" * 399])
+def test_too_short_audio_aligns_to_nothing_without_loading_the_model(pcm, monkeypatch):
+    aligner = Wav2Vec2PhonemeAligner()
+    monkeypatch.setattr(aligner, "_load", lambda: pytest.fail("model loaded"))
+    result = aligner.align(pcm, Language.ENGLISH)
+    assert result.units == [] and result.transcript == ""
