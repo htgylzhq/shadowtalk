@@ -421,3 +421,10 @@ def test_registering_new_reference_audio_drops_cached_pitch():
     store.register("s1", empty, pcm16k=pcm_frame(amplitude=0.5))
     assert store.pitch_contour("s1", CountingPitchExtractor()) is not first
     assert CountingPitchExtractor.calls == 2
+
+
+def test_decimated_long_clip_keeps_its_final_pitch():
+    # 402 frames: flat, then one final frame jumps an octave in both clips.
+    clip = [150.0] * 401 + [300.0]
+    cmp = compare_contours(contour(clip), contour(clip))
+    assert cmp.distance == pytest.approx(0.0, abs=1e-9)

@@ -155,8 +155,10 @@ def _dtw_input(semitones: np.ndarray) -> np.ndarray:
     """
     voiced = np.flatnonzero(np.isfinite(semitones))
     span = _interpolate_unvoiced(semitones[voiced[0] : voiced[-1] + 1])
-    step = -(-span.size // MAX_DTW_FRAMES)
-    return span[::step]
+    if span.size <= MAX_DTW_FRAMES:
+        return span
+    # Evenly spaced and inclusive of both ends, so the final pitch stays.
+    return span[np.linspace(0, span.size - 1, MAX_DTW_FRAMES).round().astype(int)]
 
 
 def dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
