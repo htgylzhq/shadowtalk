@@ -410,3 +410,14 @@ def test_pitch_extractor_follows_environment(monkeypatch):
     monkeypatch.setenv("SHADOWTALK_PITCH", "torchcrepe")
     monkeypatch.setattr(main.CrepePitchExtractor, "available", staticmethod(lambda: True))
     assert isinstance(main.default_pitch_extractor(), main.CrepePitchExtractor)
+
+
+def test_registering_new_reference_audio_drops_cached_pitch():
+    CountingPitchExtractor.calls = 0
+    store = ReferenceStore()
+    empty = AlignmentResult(Language.JAPANESE, "x", [])
+    store.register("s1", empty, pcm16k=pcm_frame())
+    first = store.pitch_contour("s1", CountingPitchExtractor())
+    store.register("s1", empty, pcm16k=pcm_frame(amplitude=0.5))
+    assert store.pitch_contour("s1", CountingPitchExtractor()) is not first
+    assert CountingPitchExtractor.calls == 2

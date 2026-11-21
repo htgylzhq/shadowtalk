@@ -11,8 +11,9 @@ Comparison runs in the API process with numpy only:
    hide a learner who speaks flat, so it is deliberately not used.
 2. **DTW.** The normalised contours (unvoiced gaps linearly
    interpolated so the warp is continuous) are aligned with dynamic
-   time warping. ``distance`` is the mean |semitone difference| along
-   the warp path: one number for the whole sentence's intonation.
+   time warping. ``distance`` is the accumulated |semitone difference|
+   along the warp path over the longer contour's length (as Day 4's
+   duration DTW): one number for the whole sentence's intonation.
 3. **Per-unit pitch_delta.** The learner unit's mean voiced semitone
    level minus the paired reference unit's. Units are paired by the
    forced alignment, not by the pitch warp: a warp driven by pitch
