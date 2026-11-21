@@ -439,6 +439,8 @@ def score_utterance(
         # GOP and pitch read the learner's own frames, so they use the
         # original (not rate-normalised) unit boundaries.
         original = learner.units[i]
+        # Paired by index (Day 4): a skipped or inserted word shifts every
+        # later pair. Known limitation until units are sequence-aligned.
         ref = reference.units[i] if i < len(reference.units) else None
         ref_duration = (ref.end_s - ref.start_s) if ref else None
         duration_ratio = None
