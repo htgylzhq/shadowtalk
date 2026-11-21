@@ -10,6 +10,7 @@ numpy>=1.26  # GOP + pitch DTW scoring (runs in the API process)
 # Alignment workers (GPU hosts only; imported lazily by the API process)
 faster-whisper>=1.0
 whisperx>=3.1
+transformers>=4.40  # wav2vec2 phoneme CTC aligner (SHADOWTALK_ALIGNER=phoneme)
 torchcrepe>=0.0.20
 librosa>=0.10
 # Silero VAD is loaded via torch.hub or the silero-vad package on workers.
