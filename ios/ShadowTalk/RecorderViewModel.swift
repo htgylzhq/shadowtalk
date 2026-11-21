@@ -126,7 +126,7 @@ final class RecorderViewModel: ObservableObject {
 
     private func startCapture(_ continuation: AsyncStream<AlignSocket.Frame>.Continuation) throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
         try session.setActive(true)
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
