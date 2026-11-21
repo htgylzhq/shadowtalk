@@ -424,7 +424,8 @@ def test_registering_new_reference_audio_drops_cached_pitch():
 
 
 def test_decimated_long_clip_keeps_its_final_pitch():
-    # 402 frames: flat, then one final frame jumps an octave in both clips.
-    clip = [150.0] * 401 + [300.0]
-    cmp = compare_contours(contour(clip), contour(clip))
+    # Both end on an octave jump; the long one must keep it after decimation.
+    long_clip = [150.0] * 401 + [300.0]
+    short_clip = [150.0] * 9 + [300.0]
+    cmp = compare_contours(contour(long_clip), contour(short_clip))
     assert cmp.distance == pytest.approx(0.0, abs=1e-9)
