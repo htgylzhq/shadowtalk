@@ -27,6 +27,8 @@ from app.services.g2p import ESPEAK_VOICES, LessonUnit, lesson_words, tokenize_i
 # Characters espeak's cmn IPA appends to a final for its tone.
 TONE_MARKS = frozenset("12345ɜ")
 CODAS = frozenset({"n", "ŋ", "ɻ"})
+# Of the codas only n can also start a syllable, and never before ər.
+ONSET_CODAS = frozenset({"n"})
 _CHAO_TONES = {"55": 1, "35": 2, "21": 3, "214": 3, "51": 4}
 
 PhonemeFn = Callable[[str], tuple[str, str]]
@@ -118,8 +120,9 @@ def group_initial_final(units: list[AlignedUnit]) -> list[AlignedUnit]:
 
     The CTC head already emits a Mandarin initial or a toned final as one
     token; only a coda (n, ŋ, ɻ) comes separately. It joins the final
-    before it unless a toned token follows directly, in which case it is
-    the next syllable's initial. Any other token stays its own unit.
+    before it, except an n directly before a toned final other than ər,
+    which is the next syllable's initial (n before a vowel-initial final
+    is ambiguous without lesson text). Any other token stays its own unit.
     Decoded finals carry no lexical tone: the IPA mark cannot tell tone
     1 from tone 4.
     """
@@ -127,7 +130,8 @@ def group_initial_final(units: list[AlignedUnit]) -> list[AlignedUnit]:
     for n, unit in enumerate(units):
         nxt = units[n + 1].label if n + 1 < len(units) else ""
         after_final = bool(groups) and is_final(groups[-1][0].label)
-        if after_final and unit.label in CODAS and not is_final(nxt):
+        onset = unit.label in ONSET_CODAS and is_final(nxt) and not nxt.startswith("ər")
+        if after_final and unit.label in CODAS and not onset:
             groups[-1].append(unit)
         else:
             groups.append([unit])
