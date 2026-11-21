@@ -402,3 +402,11 @@ def test_gop_scores_the_reference_unit_not_a_substituted_word():
         units=[AlignedUnit("a", 0.0, 0.10, 0.9, [A])],
     )
     assert score_utterance(learner, reference).units[0].gop < 0.1
+
+
+def test_pitch_extractor_follows_environment(monkeypatch):
+    monkeypatch.delenv("SHADOWTALK_PITCH", raising=False)
+    assert main.default_pitch_extractor() is None
+    monkeypatch.setenv("SHADOWTALK_PITCH", "torchcrepe")
+    monkeypatch.setattr(main.CrepePitchExtractor, "available", staticmethod(lambda: True))
+    assert isinstance(main.default_pitch_extractor(), main.CrepePitchExtractor)

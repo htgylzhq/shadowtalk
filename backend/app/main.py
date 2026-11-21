@@ -79,7 +79,6 @@ REFERENCE_STORE = ReferenceStore()
 # units as if alignment had run. Set it in production / on a GPU worker,
 # e.g. `main.ALIGNER = WhisperXAligner(model_size="base", device="cuda")`,
 # or via SHADOWTALK_ALIGNER=whisperx (see default_aligner below).
-ALIGNER: Aligner | None = None
 
 
 def default_aligner() -> Aligner | None:
@@ -100,8 +99,6 @@ def default_aligner() -> Aligner | None:
 # torch / torchcrepe here) — the payload then says "pitch": "unavailable".
 # Set it on a GPU worker, e.g. `main.PITCH_EXTRACTOR =
 # CrepePitchExtractor(device="cuda")`, or via SHADOWTALK_PITCH=torchcrepe.
-PITCH_EXTRACTOR: PitchExtractor | None = None
-
 SCORE_PAYLOAD_VERSION = 1
 
 
@@ -117,6 +114,11 @@ def default_pitch_extractor() -> PitchExtractor | None:
         model=os.environ.get("SHADOWTALK_CREPE_MODEL", "tiny"),
         device=os.environ.get("SHADOWTALK_DEVICE", "cpu"),
     )
+
+
+
+ALIGNER: Aligner | None = default_aligner()
+PITCH_EXTRACTOR: PitchExtractor | None = default_pitch_extractor()
 
 
 @app.get("/health")
