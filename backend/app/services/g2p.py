@@ -42,6 +42,7 @@ def espeak_ipa(word: str, language: Language) -> str:
 def lesson_words(text: str) -> list[str]:
     """Split lesson text into words, dropping surrounding punctuation."""
     words = []
+    text = text.replace("\u2019", "'").replace("\u02bc", "'")  # curly apostrophes
     for raw in text.split():
         word = "".join(
             c if unicodedata.category(c)[0] in "LMN" or c == "'" else " "

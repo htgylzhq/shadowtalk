@@ -36,6 +36,10 @@ def test_lesson_words_drop_punctuation_but_keep_apostrophes():
     assert g2p.lesson_words("I don't like tea, really!") == ["I", "don't", "like", "tea", "really"]
 
 
+def test_lesson_words_keep_curly_apostrophe_contractions():
+    assert g2p.lesson_words("I don\u2019t know") == ["I", "don't", "know"]
+
+
 def test_tokenize_ipa_prefers_the_longest_vocabulary_token():
     # "aɪ" is one model token, not "a" + "ɪ"; stress marks carry no phoneme.
     assert g2p.tokenize_ipa("lˈaɪk", VOCAB) == [6, 3, 7]
