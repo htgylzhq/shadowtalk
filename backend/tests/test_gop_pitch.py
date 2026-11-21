@@ -359,3 +359,12 @@ def test_ws_pitch_unavailable_by_default(monkeypatch):
     assert score["pitch_backend"] is None
     assert score["score_version"] == 1
     assert score["scores"] == []
+
+
+@pytest.mark.parametrize("reference_id", ["../sessions/abc", "a/b", "", 7])
+def test_ws_rejects_reference_id_that_is_not_a_slug(reference_id):
+    with client.websocket_connect("/ws/align") as ws:
+        ws.send_json({"type": "start", "language": "ja", "reference_id": reference_id})
+        assert ws.receive_json() == {"type": "error", "error": "invalid_reference_id"}
+        ws.send_json({"type": "start", "language": "ja", "reference_id": "lesson-1_a"})
+        assert ws.receive_json()["type"] == "ready"
