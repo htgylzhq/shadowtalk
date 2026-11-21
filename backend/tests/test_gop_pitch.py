@@ -333,8 +333,8 @@ def test_ws_score_payload_v1_with_gop_and_pitch(monkeypatch):
     assert score["pitch_backend"] == "fake-crepe"
     assert score["pitch_dtw_distance"] == pytest.approx(0.0, abs=1e-9)
     assert score["scores"] == [
-        {"phoneme": "こん", "word": None, "gop": pytest.approx(1.0), "pitch_delta": pytest.approx(0.0, abs=1e-9), "flagged": False},
-        {"phoneme": "にち", "word": None, "gop": None, "pitch_delta": None, "flagged": True},
+        {"phoneme": "こん", "word": None, "gop": pytest.approx(1.0), "pitch_delta": pytest.approx(0.0, abs=1e-9), "tone": None, "tone_distance": None, "flagged": False},
+        {"phoneme": "にち", "word": None, "gop": None, "pitch_delta": None, "tone": None, "tone_distance": None, "flagged": True},
     ]
     # Day 4 fields are still there and unchanged in shape.
     assert score["reference_alignment"] == "ok"

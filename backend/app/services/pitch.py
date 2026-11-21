@@ -126,6 +126,8 @@ class CrepePitchExtractor:
 
 
 MAX_DTW_FRAMES = 400  # 4 s at the 10 ms crepe hop
+TONE_SHAPE_POINTS = 10
+TONE_MIN_VOICED_FRAMES = 3  # 30 ms at the 10 ms crepe hop
 
 
 def normalise_per_speaker(contour: PitchContour) -> np.ndarray | None:
@@ -197,6 +199,42 @@ class PitchComparison:
         if learner is None or reference is None:
             return None
         return learner - reference
+
+    def unit_shape_distance(
+        self,
+        learner_span: tuple[float, float],
+        reference_span: tuple[float, float],
+        points: int = TONE_SHAPE_POINTS,
+    ) -> float | None:
+        """RMS semitone gap between the two pitch shapes over one paired unit.
+
+        Each span's contour is resampled to ``points`` and mean-centred,
+        so a learner who says the right tone higher or lower than the
+        reference is not penalised; only the shape (level, rise, dip,
+        fall) counts. This is what scores a Mandarin tone on its final.
+        None when either span has too few voiced frames.
+        """
+        learner = _shape(self.learner_semitones, learner_span, self.frame_s, points)
+        reference = _shape(self.reference_semitones, reference_span, self.frame_s, points)
+        if learner is None or reference is None:
+            return None
+        return float(np.sqrt(np.mean((learner - reference) ** 2)))
+
+
+def _shape(
+    semitones: np.ndarray, span: tuple[float, float], frame_s: float, points: int
+) -> np.ndarray | None:
+    a = max(int(np.floor(span[0] / frame_s + 1e-9)), 0)
+    b = int(np.ceil(span[1] / frame_s - 1e-9))
+    window = semitones[a:b]
+    voiced = np.flatnonzero(np.isfinite(window))
+    if voiced.size < TONE_MIN_VOICED_FRAMES:
+        return None
+    # Only the voiced stretch: a final's leading/trailing unvoiced
+    # frames carry no tone.
+    t = np.linspace(voiced[0], voiced[-1], points)
+    shape = np.interp(t, voiced, window[voiced])
+    return shape - shape.mean()
 
 
 def _voiced_mean(

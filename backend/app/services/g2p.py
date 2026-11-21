@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import unicodedata
 from collections.abc import Callable
+from dataclasses import dataclass
 
 from app.services.alignment import Language
 
@@ -87,3 +88,41 @@ def lesson_targets(
         if ids:
             targets.append((word, ids))
     return targets
+
+
+@dataclass(frozen=True)
+class LessonUnit:
+    """One alignment unit of the lesson text: a phoneme, a Japanese mora or
+    a Mandarin initial/final, as the CTC tokens it spans."""
+
+    word: str
+    # Position of the word in the lesson, so a repeated word (谢谢,
+    # "very very") stays two words when units are grouped back.
+    word_index: int
+    label: str
+    token_ids: list[int]
+    # Mandarin lexical tone 1-4, 5 = neutral, on finals only.
+    tone: int | None = None
+
+
+def lesson_units(
+    text: str,
+    language: Language,
+    vocab: dict[str, int],
+    ipa: Callable[[str, Language], str] | None = None,
+) -> list[LessonUnit]:
+    """The lesson text as language-appropriate alignment units.
+
+    Mandarin is split into initials and toned finals (app.services.mandarin);
+    other languages get one unit per CTC token.
+    """
+    if language is Language.MANDARIN:
+        from app.services import mandarin  # noqa: PLC0415
+
+        return mandarin.lesson_units(text, vocab)
+    id_to_token = {i: t for t, i in vocab.items()}
+    return [
+        LessonUnit(word, index, id_to_token[t], [t])
+        for index, (word, ids) in enumerate(lesson_targets(text, language, vocab, ipa))
+        for t in ids
+    ]
