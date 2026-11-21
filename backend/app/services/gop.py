@@ -149,12 +149,13 @@ def ctc_forced_align_words(
 ) -> list[list[tuple[int, int]] | None] | None:
     """Forced alignment where whole words may be left out.
 
-    The lattice of ``ctc_forced_align`` plus a jump from the blank
-    before word ``w`` to the blank before word ``w + 1`` (one blank frame,
-    plus ``skip_log_penalty``), so a word the speaker never said is
-    skipped instead of being stretched over a neighbouring word's audio.
-    Returns, per word, the ``(first, last)`` frame span of each token, or
-    None for a skipped word; None overall when nothing fits.
+    The lattice of ``ctc_forced_align`` plus jumps that leave out one or
+    more words, each costing ``skip_log_penalty``, so a word the speaker
+    never said is skipped instead of being stretched over a neighbouring
+    word's audio. Words may also be left out at the start or end.
+    Returns, per word, the ``(first, last)`` frame span of each target
+    token, or None for a skipped word; None overall when nothing fits or
+    every word is skipped.
     """
     frames = int(log_probs.shape[0])
     if frames == 0 or not words or not any(words):
@@ -175,35 +176,68 @@ def ctc_forced_align_words(
     can_skip = np.zeros(states, dtype=bool)
     for s in range(2, states):
         can_skip[s] = ext[s] != blank_id and ext[s] != ext[s - 2]
+    n_words = len(words)
+
+    def entry(w: int) -> list[int]:
+        return [blank_before[w]] + token_state[w][:1]
+
+    def exit_(u: int) -> list[int]:
+        return [blank_before[u + 1]] + token_state[u][-1:] if u >= 0 else [0]
+
+    # Leaving out words u+1 .. v-1 jumps from the end of word u (its last
+    # token or the blank after it) to the start of word v (the blank before
+    # it or its first token), so no extra blank frame is needed.
     jumps = [
-        (blank_before[w], blank_before[w + 1])
-        for w in range(len(words))
-        if blank_before[w] != blank_before[w + 1]
+        (src, dst, (v - u - 1) * skip_log_penalty)
+        for u in range(-1, n_words)
+        for v in range(u + 2, n_words)
+        for src in exit_(u)
+        for dst in entry(v)
+        if src != dst and not (ext[src] == ext[dst] != blank_id)
     ]
+    j_src = np.array([j[0] for j in jumps], dtype=int)
+    j_dst = np.array([j[1] for j in jumps], dtype=int)
+    j_pen = np.array([j[2] for j in jumps], dtype=float)
 
     neg_inf = -np.inf
     idx = np.arange(states)
     alpha = np.full(states, neg_inf)
-    alpha[0] = log_probs[0, blank_id]
-    alpha[1] = log_probs[0, ext[1]]
+    for v in range(n_words):
+        for s in entry(v):
+            alpha[s] = max(alpha[s], log_probs[0, ext[s]] + v * skip_log_penalty)
     back = np.zeros((frames, states), dtype=np.int32)
     for t in range(1, frames):
         step = np.concatenate(([neg_inf], alpha[:-1]))
-        skip = np.where(can_skip, np.concatenate(([neg_inf, neg_inf], alpha[:-2])), neg_inf)
+        skip = np.where(
+            can_skip,
+            np.concatenate(([neg_inf, neg_inf], alpha[:-2])),
+            neg_inf,
+        )
         moves = np.stack([alpha, step, skip])
         choice = moves.argmax(axis=0)
         best = moves.max(axis=0)
         pred = idx - choice
-        for src, dst in jumps:
-            cand = alpha[src] + skip_log_penalty
-            if cand > best[dst]:
-                best[dst] = cand
-                pred[dst] = src
+        if jumps:
+            cand = alpha[j_src] + j_pen
+            order = np.argsort(cand, kind="stable")
+            jump_best = np.full(states, neg_inf)
+            jump_src = np.zeros(states, dtype=int)
+            jump_best[j_dst[order]] = cand[order]
+            jump_src[j_dst[order]] = j_src[order]
+            better = jump_best > best
+            best[better] = jump_best[better]
+            pred[better] = jump_src[better]
         back[t] = pred
         alpha = best + log_probs[t, ext_arr]
 
-    state = states - 1 if alpha[-1] >= alpha[-2] else states - 2
-    if not np.isfinite(alpha[state]):
+    # Words left out at the end: stop at the end of word u.
+    end_score, state = neg_inf, states - 1
+    for u in range(-1, n_words):
+        for s in exit_(u):
+            score = alpha[s] + (n_words - 1 - u) * skip_log_penalty
+            if score > end_score:
+                end_score, state = score, s
+    if not np.isfinite(end_score):
         return None
     path = np.empty(frames, dtype=int)
     for t in range(frames - 1, -1, -1):
@@ -218,7 +252,7 @@ def ctc_forced_align_words(
                 break
             spans.append((int(hits[0]), int(hits[-1])))
         out.append(spans if len(spans) == len(states_w) and spans else None)
-    return out
+    return out if any(out) else None
 
 
 def gop_score(
