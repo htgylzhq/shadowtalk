@@ -20,6 +20,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Protocol
 
+import numpy as np
+
 from app.services.gop import CTCPosteriors, gop_score
 from app.services.pitch import PitchContour, compare_contours
 
@@ -309,6 +311,111 @@ class WhisperXAligner:
             log_probs=log_probs,
             frame_s=duration_s / max(log_probs.shape[0], 1),
             blank_id=blank_id,
+        )
+
+
+PHONEME_MODEL = "facebook/wav2vec2-xlsr-53-espeak-cv-ft"
+WAV2VEC2_FRAME_S = 320 / 16_000  # conv feature-extractor stride
+
+
+def units_from_ctc(
+    log_probs: np.ndarray,
+    frame_s: float,
+    blank_id: int,
+    id_to_token: dict[int, str],
+) -> list[AlignedUnit]:
+    """Greedy CTC decode into one unit per emitted token.
+
+    A unit runs from its first frame to the next unit's first frame (the
+    blanks after a phoneme belong to it); the last unit ends after its
+    own frames. ``ctc_confidence`` is the mean top posterior over the
+    token's own frames.
+    """
+    best = log_probs.argmax(axis=1)
+    top = np.exp(log_probs.max(axis=1))
+    runs: list[list[int]] = []  # [token, first frame, last frame]
+    prev = blank_id
+    for t, k in enumerate(best.tolist()):
+        if k != blank_id:
+            if k == prev:
+                runs[-1][2] = t
+            else:
+                runs.append([k, t, t])
+        prev = k
+    units = []
+    for n, (k, first, last) in enumerate(runs):
+        end = runs[n + 1][1] if n + 1 < len(runs) else last + 1
+        units.append(
+            AlignedUnit(
+                label=id_to_token[k],
+                start_s=first * frame_s,
+                end_s=end * frame_s,
+                ctc_confidence=float(top[first : last + 1].mean()),
+                token_ids=[k],
+            )
+        )
+    return units
+
+
+class Wav2Vec2PhonemeAligner:
+    """Phoneme units from a multilingual wav2vec2 IPA CTC head.
+
+    Decodes the phonemes the speaker actually produced, with frame
+    times, straight from the CTC posteriors, so no transcript or G2P is
+    needed: the reference recording is decoded the same way and
+    ``pair_units`` matches the two sequences. Verified on CPU with
+    English; Japanese / Mandarin still need a symbol map (mora grouping,
+    tones) and are unverified.
+    """
+
+    name = "wav2vec2-phoneme"
+
+    def __init__(self, model_name: str = PHONEME_MODEL, device: str | None = None) -> None:
+        self.model_name = model_name
+        self.device = device or "cpu"
+        self._model: object | None = None
+        self._processor: object | None = None
+
+    @staticmethod
+    def available() -> bool:
+        try:
+            import torch  # noqa: F401, PLC0415
+            import transformers  # noqa: F401, PLC0415
+        except Exception:
+            return False
+        return True
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+        try:
+            from transformers import AutoModelForCTC, AutoProcessor  # noqa: PLC0415
+        except Exception as exc:
+            raise AlignmentUnavailableError(
+                f"transformers + torch are needed for phoneme alignment: {exc}"
+            ) from exc
+        self._processor = AutoProcessor.from_pretrained(self.model_name)
+        self._model = AutoModelForCTC.from_pretrained(self.model_name).to(self.device).eval()
+
+    def align(self, pcm16k: bytes, language: Language) -> AlignmentResult:
+        self._load()
+        import torch  # noqa: PLC0415
+
+        samples = np.frombuffer(pcm16k, dtype="<i2").astype(np.float32) / 32768.0
+        processor, model = self._processor, self._model
+        inputs = processor(samples, sampling_rate=16_000, return_tensors="pt")  # type: ignore[operator]
+        with torch.inference_mode():
+            logits = model(inputs.input_values.to(self.device)).logits[0]  # type: ignore[operator]
+            log_probs = torch.log_softmax(logits, dim=-1).cpu().numpy()
+        tokenizer = processor.tokenizer  # type: ignore[attr-defined]
+        blank_id = tokenizer.pad_token_id
+        id_to_token = {i: t for t, i in tokenizer.get_vocab().items()}
+        units = units_from_ctc(log_probs, WAV2VEC2_FRAME_S, blank_id, id_to_token)
+        return AlignmentResult(
+            language=language,
+            transcript=" ".join(u.label for u in units),
+            units=units,
+            posteriors=CTCPosteriors(log_probs, WAV2VEC2_FRAME_S, blank_id),
         )
 
 
