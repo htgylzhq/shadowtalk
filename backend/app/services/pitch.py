@@ -190,6 +190,16 @@ class PitchComparison:
     reference_semitones: np.ndarray
     frame_s: float
 
+    def contour_payload(self) -> dict[str, float | list[float | None]]:
+        def samples(values: np.ndarray) -> list[float | None]:
+            return [round(float(value), 3) if np.isfinite(value) else None for value in values]
+
+        return {
+            "frame_s": self.frame_s,
+            "learner": samples(self.learner_semitones),
+            "reference": samples(self.reference_semitones),
+        }
+
     def unit_delta(
         self, learner_span: tuple[float, float], reference_span: tuple[float, float]
     ) -> float | None:

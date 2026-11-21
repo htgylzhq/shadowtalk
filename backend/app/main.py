@@ -331,6 +331,11 @@ async def _score_session(
         "pitch": pitch_status,
         "pitch_backend": getattr(PITCH_EXTRACTOR, "name", None),
         "pitch_dtw_distance": result.pitch_dtw_distance,
+        **(
+            {"pitch_contour": result.pitch_comparison.contour_payload()}
+            if result.pitch_comparison is not None
+            else {}
+        ),
         "units": [
             {
                 "label": u.label,

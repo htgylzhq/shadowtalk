@@ -156,6 +156,7 @@ class ScoreResult:
     gop_source: str | None = None
     # Reference unit labels the learner never said (no learner unit paired).
     skipped: list[str] = field(default_factory=list)
+    pitch_comparison: PitchComparison | None = None
 
 
 def detect_language(audio: bytes, hint: str | None = None) -> Language:
@@ -871,6 +872,7 @@ def score_utterance(
         overall_gop=overall,
         skipped=[u.label for j, u in enumerate(reference.units) if j not in paired],
         pitch_dtw_distance=pitch_distance,
+        pitch_comparison=pitch,
         duration_dtw_distance=duration_dtw,
         gop_source=gop_source,
     )
