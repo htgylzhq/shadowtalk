@@ -41,6 +41,9 @@ final class RecorderViewModel: ObservableObject {
         let configuration: BackendConfiguration
         do {
             configuration = try BackendConfiguration()
+        } catch let error as URLError where error.code == .appTransportSecurityRequiresSecureConnection {
+            fail("Use an HTTPS URL for a remote scoring server.")
+            return
         } catch {
             fail("The scoring server URL is invalid.")
             return
