@@ -28,6 +28,7 @@ decides the endpoint.
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from pathlib import Path
@@ -64,6 +65,8 @@ PCM_FRAME_BYTES = SAMPLE_RATE_HZ * FRAME_MS // 1000 * 2
 
 SESSIONS_DIR = Path(__file__).resolve().parents[1] / "data" / "sessions"
 REFERENCES_DIR = Path(__file__).resolve().parents[1] / "data" / "references"
+# reference_id names a file under REFERENCES_DIR, so it is a bare slug.
+REFERENCE_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 # Day 4: cached reference alignments, keyed by reference_id. A
 # reference recording is aligned once (same aligner as the learner)
@@ -196,9 +199,17 @@ async def align_socket(websocket: WebSocket) -> None:
                 continue
 
             if event.get("type") == "start":
+                reference_id = event.get("reference_id")
+                if reference_id is not None and not (
+                    isinstance(reference_id, str) and REFERENCE_ID_RE.fullmatch(reference_id)
+                ):
+                    await websocket.send_json(
+                        {"type": "error", "error": "invalid_reference_id"}
+                    )
+                    continue
                 session = UtteranceSession()
                 session.language_hint = event.get("language")
-                session.reference_id = event.get("reference_id")
+                session.reference_id = reference_id
                 await websocket.send_json({"type": "ready", "session_id": session.session_id})
 
             elif event.get("type") == "end":
