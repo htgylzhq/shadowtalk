@@ -42,6 +42,11 @@ def test_equal_cost_alignment_keeps_exact_matches():
     assert pair_units(units("i", "um", "like", "tea"), units("i", "like", "hot", "tea")) == [0, None, 1, 3]
 
 
+def test_ipa_diacritics_distinguish_phonemes():
+    assert pair_units(units("n\u0329"), units("n", "n\u0329")) == [1]
+    assert pair_units(units("n"), units("n", "n\u0329")) == [0]
+
+
 def test_case_and_punctuation_do_not_break_pairing():
     assert pair_units(units("Hello,", "WORLD."), units("hello", "world")) == [0, 1]
 
