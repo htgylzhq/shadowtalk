@@ -448,8 +448,14 @@ def score_utterance(
         gated = unit.ctc_confidence < CONFIDENCE_GATE or (
             ref_conf is not None and ref_conf < CONFIDENCE_GATE
         )
+        # Score what the learner should have said: the reference unit's
+        # tokens over the learner's frames, so a confident substitution
+        # does not grade itself.
+        target = original
+        if ref is not None and ref.token_ids:
+            target = replace(original, token_ids=ref.token_ids)
         gop, source = (None, None) if gated else gop_from_ctc_posteriors(
-            original, learner.posteriors
+            target, learner.posteriors
         )
         if gop is None:
             unit_scores.append(
