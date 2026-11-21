@@ -76,4 +76,30 @@ final class ScorePayloadTests: XCTestCase {
             }
         }
     }
+
+    @MainActor
+    func testSocketScoresStreamedFramesAgainstFixtureReference() async throws {
+        guard let baseURL = ProcessInfo.processInfo.environment["SHADOWTALK_FIXTURE_URL"] else {
+            throw XCTSkip("Set SHADOWTALK_FIXTURE_URL to run the live socket test.")
+        }
+        let config = try BackendConfiguration(environment: [
+            "SHADOWTALK_BACKEND_URL": baseURL,
+            "SHADOWTALK_REFERENCE_ID": "score-fixture"
+        ])
+        let (frames, writer) = AsyncStream.makeStream(of: AlignSocket.Frame.self)
+        for _ in 0..<10 { writer.yield(.audio(Data(repeating: 0, count: 640))) }
+        writer.yield(.end)
+        writer.finish()
+
+        let ready = expectation(description: "Server accepted the attempt")
+        let endpoint = expectation(description: "Server ended the utterance")
+        let score = try await AlignSocket(configuration: config).score(
+            frames: frames, onReady: { ready.fulfill() }, onEndpoint: { endpoint.fulfill() }
+        )
+        await fulfillment(of: [ready, endpoint], timeout: 1, enforceOrder: true)
+        XCTAssertEqual(score.scores.map(\.phoneme), ["こん", "にち"])
+        XCTAssertEqual(score.flaggedCount, 1)
+        XCTAssertEqual(score.pitchContour?.learner, Array(repeating: 0.0, count: 60))
+        XCTAssertEqual(score.pitchContour?.reference.first, -3.0)
+    }
 }
