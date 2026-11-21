@@ -113,13 +113,18 @@ def lesson_units(
 ) -> list[LessonUnit]:
     """The lesson text as language-appropriate alignment units.
 
-    Mandarin is split into initials and toned finals (app.services.mandarin);
-    other languages get one unit per CTC token.
+    Mandarin is split into initials and toned finals (app.services.mandarin),
+    Japanese into morae (app.services.japanese); other languages get one
+    unit per CTC token.
     """
     if language is Language.MANDARIN:
         from app.services import mandarin  # noqa: PLC0415
 
         return mandarin.lesson_units(text, vocab)
+    if language is Language.JAPANESE:
+        from app.services import japanese  # noqa: PLC0415
+
+        return japanese.lesson_units(text, vocab)
     id_to_token = {i: t for t, i in vocab.items()}
     return [
         LessonUnit(word, index, id_to_token[t], [t])

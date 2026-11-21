@@ -5,22 +5,26 @@ each morpheme's pronunciation field (katakana, long vowels written as
 ``ー``, the particle は read as ワ). The reading is split into morae and
 each mora becomes one unit of the phoneme CTC model's tokens:
 
-    緑茶 -> リョクチャ -> リョ [rʲ o] | ク [k u] | チャ [tɕ a]
-    コーヒー -> コー [k oː] | ヒー [ç iː]
-    学校 -> ガッコー -> ガ [ɡ a] | ッ [k] | コー [k oː]
+    緑茶 -> リョクチャ -> リョ [ɾ j o] | ク [k] | チャ [tʃ a]
+    コーヒー -> コー [k o] | ヒー [x i]
+    学校 -> ガッコー -> ガ [ɡ a] | ッコー [k o]
 
-The symbols were picked by CTC likelihood on the model, not taken from
-espeak-ng's Japanese voice: plain a/i/u/e/o with ``ː`` long vowels and
-ɾ for the r row fit the model better than espeak's ä/o̞/ɯᵝ, doubled
-vowels and ɽ. A long vowel stays inside its mora (コー is one unit)
-because the model has a single token for it. ッ is a mora of its own
-holding the next mora's consonant, and ン takes the place of the next
-consonant (m before p/b/m, ŋ before k/g, n otherwise).
+The symbols were picked by CTC likelihood of native-sounding (neural TTS)
+Japanese on the model, not taken from espeak-ng's Japanese voice: plain
+a/i/u/e/o, ɾ for the r row, ʃ/tʃ/dʒ, x for ヒ. A long vowel stays inside
+its mora with the short vowel token, since native long vowels fit oː
+far worse than o; vowel length is judged by the duration ratio. ッ is
+folded into the next mora, ン takes the place of the next consonant (m
+before p/b/m, ŋ before k/g, n otherwise), and devoiced i/u are dropped.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.services.g2p import LessonUnit
 
 _ROWS = {
     "": "アイウエオ",
@@ -45,13 +49,13 @@ _KANA: dict[str, tuple[str, str]] = {
 }
 _KANA.update(
     {
-        "シ": ("ɕ", "i"),
-        "ジ": ("dʑ", "i"),
-        "チ": ("tɕ", "i"),
+        "シ": ("ʃ", "i"),
+        "ジ": ("dʒ", "i"),
+        "チ": ("tʃ", "i"),
         "ツ": ("ts", "u"),
-        "ヂ": ("dʑ", "i"),
+        "ヂ": ("dʒ", "i"),
         "ヅ": ("z", "u"),
-        "ヒ": ("ç", "i"),
+        "ヒ": ("x", "i"),
         "フ": ("ɸ", "u"),
         "ヤ": ("j", "a"),
         "ユ": ("j", "u"),
@@ -61,23 +65,24 @@ _KANA.update(
         "ヴ": ("v", "u"),
     }
 )
-# Small ャュョ after an i-column kana: palatalised consonant + vowel.
+# Small ャュョ after an i-column kana: palatalised onset + vowel.
 _SMALL_Y = {"ャ": "a", "ュ": "u", "ョ": "o"}
 _PALATAL = {
-    "k": "kʲ",
-    "ɡ": "ɡʲ",
-    "n": "nʲ",
-    "h": "ç",
-    "b": "bʲ",
-    "p": "pʲ",
-    "m": "mʲ",
-    "ɾ": "rʲ",
+    "": ["j"],
+    "k": ["kʲ"],
+    "ɡ": ["ɡʲ"],
+    "n": ["nʲ"],
+    "x": ["x"],
+    "b": ["bʲ"],
+    "p": ["pʲ"],
+    "m": ["mʲ"],
+    "ɾ": ["ɾ", "j"],
 }
 # Small ァィゥェォ: the preceding kana's consonant with a new vowel.
 _SMALL_V = {"ァ": "a", "ィ": "i", "ゥ": "u", "ェ": "e", "ォ": "o"}
-_LONG = {"a": "aː", "i": "iː", "u": "uː", "e": "eː", "o": "oː"}
 _LABIAL = {"p", "b", "m", "pʲ", "bʲ", "mʲ"}
 _VELAR = {"k", "ɡ", "kʲ", "ɡʲ"}
+_VOICELESS = {"k", "kʲ", "s", "ʃ", "t", "tʃ", "ts", "h", "x", "ɸ", "p", "pʲ"}
 
 
 def to_katakana(text: str) -> str:
@@ -89,38 +94,70 @@ def to_katakana(text: str) -> str:
 def morae(kana: str) -> list[tuple[str, list[str]]]:
     """Split a kana reading into ``(mora, phones)``.
 
-    Characters that are not kana are skipped.
+    Characters that are not kana are skipped. ッ is kept as a mora with
+    no phones; ``devoice`` / ``lesson_units`` fold it into the next mora.
     """
     out: list[tuple[str, list[str]]] = []
     for c in to_katakana(kana):
         if c in _SMALL_Y and out and out[-1][1][-1:] == ["i"]:
             label, phones = out[-1]
-            cons = phones[0] if len(phones) == 2 else ""
-            out[-1] = (label + c, [_PALATAL.get(cons, cons) or "j", _SMALL_Y[c]])
+            onset = _PALATAL.get(phones[0] if len(phones) == 2 else "", phones[:1])
+            out[-1] = (label + c, [*onset, _SMALL_Y[c]])
         elif c in _SMALL_V and out and out[-1][1][-1:] and out[-1][1][-1] in _VOWELS:
             label, phones = out[-1]
             cons = phones[0] if len(phones) == 2 else "w" if label == "ウ" else ""
             out[-1] = (label + c, [cons, _SMALL_V[c]] if cons else [_SMALL_V[c]])
         elif c == "ー":
-            if out and out[-1][1] and out[-1][1][-1] in _LONG:
-                label, phones = out[-1]
-                out[-1] = (label + c, phones[:-1] + [_LONG[phones[-1]]])
+            # The model has long-vowel tokens but native long vowels fit the
+            # short ones far better, so length is left to the duration ratio.
+            if out and out[-1][1]:
+                out[-1] = (out[-1][0] + c, out[-1][1])
         elif c in ("ッ", "ン"):
             out.append((c, []))
         elif c in _KANA:
             cons, vowel = _KANA[c]
             out.append((c, [cons, vowel] if cons else [vowel]))
-    # ッ and ン depend on the consonant that follows them.
-    for n, (label, phones) in enumerate(out):
-        if label not in ("ッ", "ン"):
-            continue
-        nxt = out[n + 1][1] if n + 1 < len(out) else []
-        cons = nxt[0] if len(nxt) == 2 else ""
-        if label == "ッ":
-            out[n] = (label, [cons] if cons else [])
-        else:
+    for n, (label, _) in enumerate(out):
+        if label == "ン":
+            nxt = out[n + 1][1] if n + 1 < len(out) else []
+            cons = nxt[0] if nxt and nxt[0] not in _VOWELS else ""
             out[n] = (label, ["m" if cons in _LABIAL else "ŋ" if cons in _VELAR else "n"])
-    return [(label, phones) for label, phones in out if phones]
+    return out
+
+
+def fold_sokuon(units: list[tuple[str, list[str]]]) -> list[tuple[str, list[str]]]:
+    """Attach each ッ to the mora after it (ガッコー -> ガ | ッコー).
+
+    The model hears a geminate as one long closure, not two consonants,
+    so ッ gets no tokens of its own; its length shows in the next mora's
+    duration.
+    """
+    out: list[tuple[str, list[str]]] = []
+    pending = ""
+    for label, phones in units:
+        if label == "ッ":
+            pending += label
+        elif phones:
+            out.append((pending + label, phones))
+            pending = ""
+    return out
+
+
+def devoice(units: list[list[str]]) -> list[list[str]]:
+    """Drop the i/u of a mora devoiced in standard Japanese.
+
+    A high vowel after a voiceless consonant is devoiced before another
+    voiceless consonant and at the end of the utterance (す in です,
+    く in 緑茶, し in ました); the model hears no vowel there.
+    """
+    out = [list(p) for p in units]
+    for n, phones in enumerate(out):
+        if len(phones) < 2 or phones[-1] not in ("i", "u") or phones[-2] not in _VOICELESS:
+            continue
+        nxt = units[n + 1] if n + 1 < len(units) else None
+        if nxt is None or nxt[0] in _VOICELESS:
+            out[n] = phones[:-1]
+    return out
 
 
 def fugashi_reading(text: str) -> list[tuple[str, str | None]]:
@@ -131,31 +168,37 @@ def fugashi_reading(text: str) -> list[tuple[str, str | None]]:
     return [(w.surface, getattr(w.feature, "pron", None)) for w in tagger(text)]
 
 
-def japanese_units(
+def lesson_units(
     text: str,
     vocab: dict[str, int],
     reading: Callable[[str], Sequence[tuple[str, str | None]]] | None = None,
-) -> list[tuple[str, list[tuple[str, list[int]]]]]:
-    """``(word, [(mora, token_ids), ...])`` per lesson word.
+) -> list[LessonUnit]:
+    """One unit per mora of the lesson text, tagged with its word.
 
     Punctuation is dropped. Returns [] when fugashi is not installed or a
     word has no kana reading (a reading of part of the text would not
     fit the recording).
     """
+    from app.services.g2p import LessonUnit  # noqa: PLC0415
+
     try:
         words = (reading or fugashi_reading)(text)
     except ImportError:
         return []
-    out = []
+    flat: list[tuple[str, int, str, list[str]]] = []
+    index = 0
     for surface, pron in words:
         if not any(c.isalnum() for c in surface):
             continue
-        units = [
-            (label, [vocab[p] for p in phones if p in vocab])
-            for label, phones in morae(pron or "")
-        ]
-        units = [(label, ids) for label, ids in units if ids]
+        units = fold_sokuon(morae(pron or ""))
         if not units:
             return []
-        out.append((surface, units))
+        flat += [(surface, index, label, phones) for label, phones in units]
+        index += 1
+    voiced = devoice([phones for *_, phones in flat])
+    out = [
+        LessonUnit(word, index, label, ids)
+        for (word, index, label, _), phones in zip(flat, voiced)
+        if (ids := [vocab[p] for p in phones if p in vocab])
+    ]
     return out
