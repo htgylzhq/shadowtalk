@@ -148,3 +148,77 @@ in the backend environment. Start the fixture backend from `backend/` with
 Run `xcodebuild test` with `TEST_RUNNER_SHADOWTALK_FIXTURE_URL=http://127.0.0.1:8766`
 in its environment. The fixture exercises the real API with synthetic alignment
 and pitch data. The recorder test also needs a working simulator audio input.
+
+## Score a real recording on an iPhone
+
+Use a Mac and iPhone on the same private Wi-Fi network. The development API
+has no authentication and saves submitted WAVs under `backend/data/sessions/`.
+Do not expose this port to the internet.
+
+1. From `backend/`, create a Python 3.12 environment with the CPU scoring stack:
+
+   ```bash
+   python3.12 -m venv .venv
+   source .venv/bin/activate
+   python -m pip install fastapi uvicorn websockets httpx pytest \
+     'torch==2.8.0' 'torchaudio==2.8.0' 'transformers==4.55.4' 'torchcrepe==0.0.24'
+   ```
+
+   Run the real-model test once to download and verify the wav2vec2 model
+   and check the local torchcrepe install:
+
+   ```bash
+   OMP_NUM_THREADS=2 SHADOWTALK_RUN_MODEL_TESTS=1 python -m pytest tests/test_recorded_scoring.py -q
+   ```
+
+2. Install [mkcert](https://github.com/FiloSottile/mkcert#installation) on the Mac.
+   Set `LAN_IP` to the Mac's Wi-Fi IPv4 address from System Settings.
+   Use that same address in Xcode and on the iPhone.
+
+   ```bash
+   LAN_IP=192.168.1.25  # replace with your Mac's Wi-Fi IP
+   mkdir -p data/references data/tls
+   cp tests/librispeech.wav data/references/day7-librispeech.wav
+   export CAROOT="$PWD/data/tls"
+   mkcert -cert-file data/tls/backend.pem -key-file data/tls/backend-key.pem "$LAN_IP"
+   openssl x509 -in data/tls/rootCA.pem -outform DER -out data/tls/ShadowTalk-Dev-CA.cer
+   ```
+
+   AirDrop **only** `ShadowTalk-Dev-CA.cer` to the iPhone. Install it from
+   **Settings > Profile Downloaded**. Then enable full trust for the mkcert
+   root under **Settings > General > About > Certificate Trust Settings**.
+   Keep both private keys on the Mac. Remove the CA from the phone after testing.
+   If the Mac's address changes, issue a new server certificate for the new IP.
+
+3. Start a single backend worker from `backend/`:
+
+   ```bash
+   OMP_NUM_THREADS=2 SHADOWTALK_ALIGNER=phoneme SHADOWTALK_DEVICE=cpu \
+     SHADOWTALK_PITCH=torchcrepe SHADOWTALK_VAD=energy python -m uvicorn app.main:app \
+     --host "$LAN_IP" --port 8443 --ws-max-size 65536 \
+     --ssl-certfile data/tls/backend.pem --ssl-keyfile data/tls/backend-key.pem
+   ```
+
+   In iPhone Safari, open `https://<LAN_IP>:8443/health`. Expect
+   `"status":"ok"` without a certificate warning. If it doesn't load, check
+   certificate trust, the address, Wi-Fi client isolation, and the Mac firewall.
+   This check verifies network and TLS, not the models.
+   Energy VAD avoids Silero downloads for the LAN test; it does not
+   replace or stub the scoring models.
+
+4. In Xcode, select your iPhone and signing team. In **Edit Scheme > Run >
+   Arguments > Environment Variables**, set:
+
+   | Setting | Value |
+   | --- | --- |
+   | `SHADOWTALK_BACKEND_URL` | `https://<LAN_IP>:8443` |
+   | `SHADOWTALK_REFERENCE_ID` | `day7-librispeech` |
+   | `SHADOWTALK_LANGUAGE` | `en` |
+
+5. Play `backend/tests/librispeech.wav` on the Mac. Run the app, tap
+   **Record**, grant microphone and local network access if prompted, and
+   shadow “Where is my brother now?” Tap **Stop** if the app is still recording.
+   Expect an unlabeled live **Score**, a mean GOP or unscored units with
+   confidence flags, and overlaid learner and reference pitch traces for
+   voiced speech. No particular score is required. The first run loads the
+   models and reference; record again to check the warmed path.

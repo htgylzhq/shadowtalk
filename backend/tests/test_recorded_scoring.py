@@ -28,6 +28,7 @@ def test_recorded_wav_returns_relative_gop_and_pitch(monkeypatch, tmp_path):
 
     monkeypatch.setenv("SHADOWTALK_ALIGNER", "phoneme")
     monkeypatch.setenv("SHADOWTALK_PITCH", "torchcrepe")
+    monkeypatch.setenv("SHADOWTALK_VAD", "energy")
     aligner = main.default_aligner()
     pitch = main.default_pitch_extractor()
     assert isinstance(aligner, Wav2Vec2PhonemeAligner)
@@ -37,10 +38,6 @@ def test_recorded_wav_returns_relative_gop_and_pitch(monkeypatch, tmp_path):
     monkeypatch.setattr(main, "REFERENCES_DIR", tmp_path)
     monkeypatch.setattr(main, "SESSIONS_DIR", tmp_path)
     monkeypatch.setattr(main, "REFERENCE_STORE", ReferenceStore())
-    # The transport is client-ended here so Silero availability does not
-    # change which samples reach the real scoring models.
-    monkeypatch.setattr(main.VoiceActivityDetector, "_try_load_silero", staticmethod(lambda: None))
-
     with TestClient(main.app) as client, client.websocket_connect("/ws/align") as ws:
         ws.send_json({"type": "start", "language": "en", "reference_id": reference_id})
         ready = ws.receive_json()

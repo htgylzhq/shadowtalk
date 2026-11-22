@@ -20,6 +20,7 @@ any frame length and internally re-chunks.
 from __future__ import annotations
 
 import math
+import os
 import struct
 import wave
 from dataclasses import dataclass, field
@@ -95,6 +96,8 @@ class VoiceActivityDetector:
     @staticmethod
     def _try_load_silero() -> object | None:
         """Best-effort Silero load; returns None (energy fallback) on any failure."""
+        if os.getenv("SHADOWTALK_VAD") == "energy":
+            return None
         try:
             import torch  # noqa: PLC0415  (heavy, optional)
 
