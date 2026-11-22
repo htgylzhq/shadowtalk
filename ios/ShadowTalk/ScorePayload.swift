@@ -6,12 +6,31 @@ struct ScorePayload: Decodable {
     let pitchContour: PitchContour?
     let pitchStatus: String?
     let gopSource: String?
+    let framesReceived: Int?
+    let speechMilliseconds: Int?
 
     enum CodingKeys: String, CodingKey {
         case alignment, scores
         case pitchContour = "pitch_contour"
         case pitchStatus = "pitch"
         case gopSource = "gop_source"
+        case framesReceived = "frames_received"
+        case speechMilliseconds = "speech_ms"
+    }
+
+    var emptyRecording: Bool { framesReceived == 0 }
+
+    var missingPronunciationMessage: String {
+        switch alignment {
+        case "unavailable": "The server’s speech aligner is unavailable."
+        case "error": "The server couldn’t align this recording. Try again."
+        default:
+            if speechMilliseconds == 0 {
+                "No voiced speech was detected. Try speaking closer to the microphone."
+            } else {
+                "No pronunciation units were scored for this recording."
+            }
+        }
     }
 
     var meanGOP: Double? {
@@ -35,7 +54,7 @@ struct ScorePayload: Decodable {
         case "missing": "The server has no reference audio for pitch comparison."
         case "unavailable": "Pitch extraction is not available on the server."
         case "error": "The server couldn't extract pitch from the audio."
-        default: "Pitch comparison needs voiced audio from both recordings."
+        default: "No voiced pitch was found in one or both recordings."
         }
     }
 

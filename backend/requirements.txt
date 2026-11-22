@@ -1,5 +1,6 @@
 # API / streaming layer
 fastapi>=0.110
+anyio>=4.0
 uvicorn[standard]>=0.29
 pydantic>=2.6
 websockets>=12.0

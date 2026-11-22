@@ -41,6 +41,19 @@ final class ScorePayloadTests: XCTestCase {
         XCTAssertEqual(payload.missingPitchMessage, "Pitch extraction is not available on the server.")
     }
 
+    func testEmptyRecordingIsDistinctFromUnvoicedAudio() throws {
+        let decoder = JSONDecoder()
+        let empty = try decoder.decode(ScorePayload.self, from: Data(#"{"scores":[],"frames_received":0}"#.utf8))
+        let quiet = try decoder.decode(ScorePayload.self, from: Data(
+            #"{"scores":[],"frames_received":20,"pitch":"unvoiced","alignment":"ok","speech_ms":0}"#.utf8
+        ))
+
+        XCTAssertTrue(empty.emptyRecording)
+        XCTAssertFalse(quiet.emptyRecording)
+        XCTAssertEqual(quiet.missingPronunciationMessage, "No voiced speech was detected. Try speaking closer to the microphone.")
+        XCTAssertEqual(quiet.missingPitchMessage, "No voiced pitch was found in one or both recordings.")
+    }
+
     func testBundledSampleHasComparableContoursWithUnvoicedGaps() throws {
         let sample = try ScorePayload.sample()
         let contour = try XCTUnwrap(sample.pitchContour)
@@ -87,7 +100,7 @@ final class ScorePayloadTests: XCTestCase {
             "SHADOWTALK_REFERENCE_ID": "score-fixture"
         ])
         let (frames, writer) = AsyncStream.makeStream(of: AlignSocket.Frame.self)
-        for _ in 0..<10 { writer.yield(.audio(Data(repeating: 0, count: 640))) }
+        for _ in 0..<10 { writer.yield(.audio(Data(repeating: 1, count: 640))) }
         writer.yield(.end)
         writer.finish()
 

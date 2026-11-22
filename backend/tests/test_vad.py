@@ -118,3 +118,93 @@ def test_ws_explicit_end():
         score = ws.receive_json()
         assert score["type"] == "score"
         assert score["frames_received"] == 10
+
+
+def test_empty_recording_does_not_load_the_models(monkeypatch, tmp_path):
+    import app.main as main
+
+    class UnusedModel:
+        def align(self, *args):
+            raise AssertionError("empty sessions must not run alignment")
+
+        def extract(self, *args):
+            raise AssertionError("empty sessions must not run pitch")
+
+    monkeypatch.setattr(main, "ALIGNER", UnusedModel())
+    monkeypatch.setattr(main, "PITCH_EXTRACTOR", UnusedModel())
+    monkeypatch.setattr(main, "SESSIONS_DIR", tmp_path)
+    with client.websocket_connect("/ws/align") as ws:
+        ws.send_json({"type": "start", "language": "en"})
+        assert ws.receive_json()["type"] == "ready"
+        ws.send_bytes(b"")
+        ws.send_json({"type": "end"})
+        endpoint = ws.receive_json()
+        score = ws.receive_json()
+
+    assert endpoint["utterance_wav"] is None
+    assert score["frames_received"] == 0
+    assert score["scores"] == []
+    assert score["alignment"] != "error"
+    assert score["pitch"] != "error"
+    assert not list(tmp_path.iterdir())
+
+
+def test_ws_ignores_stop_after_vad_until_the_next_start(monkeypatch, tmp_path):
+    import app.main as main
+
+    monkeypatch.setattr(main, "SESSIONS_DIR", tmp_path)
+    with client.websocket_connect("/ws/align") as ws:
+        ws.send_json({"type": "start"})
+        assert ws.receive_json()["type"] == "ready"
+        for _ in range(25):
+            ws.send_bytes(pcm_frame(0.3))
+        for _ in range(30):
+            ws.send_bytes(pcm_frame(0.0))
+        assert ws.receive_json()["reason"] == "vad"
+        assert ws.receive_json()["type"] == "score"
+        ws.send_json({"type": "end"})
+        ws.send_json({"type": "start"})
+        assert ws.receive_json()["type"] == "ready"
+
+
+def test_health_responds_while_websocket_scoring_waits(monkeypatch, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    import app.main as main
+    from app.services.alignment import AlignmentResult
+
+    entered, release, finished = Event(), Event(), Event()
+
+    class SlowAligner:
+        def align(self, pcm, language):
+            entered.set()
+            release.wait(5)
+            finished.set()
+            return AlignmentResult(language, "", [])
+
+    monkeypatch.setattr(main, "ALIGNER", SlowAligner())
+    monkeypatch.setattr(main, "SESSIONS_DIR", tmp_path)
+    with (
+        ThreadPoolExecutor(max_workers=1) as executor,
+        TestClient(app) as shared_client,
+        shared_client.websocket_connect("/ws/align") as ws,
+    ):
+        ws.send_json({"type": "start"})
+        assert ws.receive_json()["type"] == "ready"
+
+        def request_health_during_alignment():
+            assert entered.wait(2)
+            response = shared_client.get("/health")
+            assert not finished.is_set()
+            return response
+
+        request = executor.submit(request_health_during_alignment)
+        ws.send_bytes(pcm_frame(0.3))
+        ws.send_json({"type": "end"})
+        try:
+            assert request.result(timeout=2).json()["status"] == "ok"
+        finally:
+            release.set()
+        assert ws.receive_json()["type"] == "endpoint"
+        assert ws.receive_json()["type"] == "score"

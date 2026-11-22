@@ -16,6 +16,23 @@ final class ScoreFlowTests: XCTestCase {
         }
     }
 
+    func testDenyingMicrophoneExplainsHowToRecover() {
+        let app = XCUIApplication()
+        app.resetAuthorizationStatus(for: .microphone)
+        defer { app.resetAuthorizationStatus(for: .microphone) }
+        app.launch()
+        app.buttons["Record"].tap()
+
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let deny = springboard.alerts.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Don")).firstMatch
+        XCTAssertTrue(deny.waitForExistence(timeout: 8))
+        deny.tap()
+        XCTAssertTrue(app.staticTexts[
+            "Microphone access is off. Enable it for ShadowTalk in Settings, or view a sample score."
+        ].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["View sample score"].exists)
+    }
+
     func testRecordingWithoutBackendShowsLabeledSample() {
         let app = XCUIApplication()
         app.launchEnvironment["SHADOWTALK_BACKEND_URL"] = "http://127.0.0.1:1"
