@@ -185,8 +185,8 @@ Do not expose this port to the internet.
    ```
 
    AirDrop **only** `ShadowTalk-Dev-CA.cer` to the iPhone. Install it from
-   **Settings > Profile Downloaded**. Then enable full trust for the mkcert
-   root under **Settings > General > About > Certificate Trust Settings**.
+   **Settings > Profile Downloaded**. Then [enable full trust](https://support.apple.com/en-us/102390)
+   for the mkcert root under **Settings > General > About > Certificate Trust Settings**.
    Keep both private keys on the Mac. Remove the CA from the phone after testing.
    If the Mac's address changes, issue a new server certificate for the new IP.
 

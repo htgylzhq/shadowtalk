@@ -15,8 +15,7 @@ Server -> client:
     - {"type": "endpoint", ...} when Silero/energy VAD decides the
       utterance ended (silence after speech), even without an "end"
     - {"type": "score", ...} with per-unit GOP scores once alignment of
-      the utterance completes (target: < 300 ms post-utterance, because
-      alignment runs incrementally on the GPU worker during streaming).
+      the utterance completes. Scoring starts after endpointing.
 
 Day 2: VAD endpointing runs over the live stream and each finished
 utterance is saved as a WAV under backend/data/sessions/<session>.wav
@@ -28,11 +27,13 @@ decides the endpoint.
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
 from pathlib import Path
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from app.services.alignment import (
@@ -52,7 +53,7 @@ from app.services.pitch import (
     PitchExtractor,
     PitchUnavailableError,
 )
-from app.services.reference import ReferenceStore, load_reference_pcm
+from app.services.reference import ReferenceStore
 from app.services.vad import (
     FRAME_MS,
     VoiceActivityDetector,
@@ -60,6 +61,11 @@ from app.services.vad import (
 )
 
 app = FastAPI(title="ShadowTalk API", version="0.1.0")
+logger = logging.getLogger(__name__)
+# Silero setup touches the shared torch.hub cache. Scoring shares its own
+# slot for model initialization, inference, and reference-cache writes.
+VAD_SETUP_LIMIT = CapacityLimiter(1)
+SCORING_LIMIT = CapacityLimiter(1)
 
 SAMPLE_RATE_HZ = 16_000
 # 20 ms of 16 kHz mono PCM16 = 320 samples = 640 bytes.
@@ -151,7 +157,8 @@ class UtteranceSession:
 
     @property
     def pcm(self) -> bytes:
-        return b"".join(self.frames)
+        pcm = b"".join(self.frames)
+        return pcm[:len(pcm) - len(pcm) % 2]
 
     @property
     def frame_count(self) -> int:
@@ -162,6 +169,8 @@ class UtteranceSession:
 
         Returns True when VAD endpointing just fired for this utterance.
         """
+        if not data:
+            return False
         self.frames.append(data)
         self._byte_buffer += data
         endpoint = False
@@ -177,16 +186,17 @@ class UtteranceSession:
 
     def save_utterance(self) -> str | None:
         """Persist the utterance WAV; returns the file name, or None if empty."""
-        if not self.frames:
+        pcm = self.pcm
+        if not pcm:
             return None
-        path = save_utterance_wav(self.pcm, SESSIONS_DIR / f"{self.session_id}.wav")
+        path = save_utterance_wav(pcm, SESSIONS_DIR / f"{self.session_id}.wav")
         return path.name
 
 
 @app.websocket("/ws/align")
 async def align_socket(websocket: WebSocket) -> None:
     await websocket.accept()
-    session = UtteranceSession()
+    session: UtteranceSession | None = None
     try:
         while True:
             message = await websocket.receive()
@@ -194,11 +204,12 @@ async def align_socket(websocket: WebSocket) -> None:
                 break
 
             if "bytes" in message and message["bytes"] is not None:
-                if session.add_frame(message["bytes"]) and not session.endpoint_sent:
+                if session is None:
+                    session = await to_thread.run_sync(UtteranceSession, limiter=VAD_SETUP_LIMIT)
+                if not session.endpoint_sent and session.add_frame(message["bytes"]):
                     session.endpoint_sent = True
                     session.endpoint_reason = "vad"
                     await _finish_session(websocket, session)
-                    session = UtteranceSession()
                 continue
 
             text = message.get("text")
@@ -207,6 +218,8 @@ async def align_socket(websocket: WebSocket) -> None:
             try:
                 event = json.loads(text)
             except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
                 continue
 
             if event.get("type") == "start":
@@ -218,25 +231,40 @@ async def align_socket(websocket: WebSocket) -> None:
                         {"type": "error", "error": "invalid_reference_id"}
                     )
                     continue
-                session = UtteranceSession()
-                session.language_hint = event.get("language")
+                language = event.get("language")
+                if language is not None:
+                    try:
+                        if not isinstance(language, str):
+                            raise ValueError
+                        detect_language(b"", hint=language)
+                    except ValueError:
+                        await websocket.send_json({"type": "error", "error": "invalid_language"})
+                        continue
+                session = await to_thread.run_sync(UtteranceSession, limiter=VAD_SETUP_LIMIT)
+                session.language_hint = language
                 session.reference_id = reference_id
                 await websocket.send_json({"type": "ready", "session_id": session.session_id})
 
             elif event.get("type") == "end":
+                if session is None:
+                    session = await to_thread.run_sync(UtteranceSession, limiter=VAD_SETUP_LIMIT)
                 if session.endpoint_sent:
                     continue
                 session.endpoint_sent = True
                 session.endpoint_reason = "client_end"
                 await _finish_session(websocket, session)
-                session = UtteranceSession()
     except WebSocketDisconnect:
         return
 
 
 async def _finish_session(websocket: WebSocket, session: UtteranceSession) -> None:
     """Save the utterance, tell the client it ended, then score it."""
-    wav_name = session.save_utterance()
+    try:
+        wav_name = await to_thread.run_sync(session.save_utterance)
+    except OSError:
+        logger.exception("Failed to save recording %s", session.session_id)
+        await websocket.send_json({"type": "error", "error": "recording_storage_failed"})
+        return
     await websocket.send_json(
         {
             "type": "endpoint",
@@ -246,10 +274,11 @@ async def _finish_session(websocket: WebSocket, session: UtteranceSession) -> No
             "utterance_wav": wav_name,
         }
     )
-    await websocket.send_json(await _score_session(session, wav_name))
+    score = await to_thread.run_sync(_score_session, session, wav_name, limiter=SCORING_LIMIT)
+    await websocket.send_json(score)
 
 
-async def _score_session(
+def _score_session(
     session: UtteranceSession, wav_name: str | None = None
 ) -> dict:
     """Run alignment + scoring for a finished utterance.
@@ -261,19 +290,21 @@ async def _score_session(
     reference exists the payload says so ("missing") and scoring falls
     back to the learner units alone, as in Day 3.
     """
-    language = detect_language(session.pcm, hint=session.language_hint)
+    pcm = session.pcm
+    has_signal = any(pcm)
+    language = detect_language(pcm, hint=session.language_hint)
     profile = profile_for(language)
 
     aligner = ALIGNER
-    alignment_status = "unavailable"
+    alignment_status = "ok" if aligner is not None else "unavailable"
     learner = AlignmentResult(language=language, transcript="", units=[])
-    if aligner is not None:
+    if aligner is not None and has_signal:
         try:
-            learner = aligner.align(session.pcm, language)
-            alignment_status = "ok"
+            learner = aligner.align(pcm, language)
         except AlignmentUnavailableError:
             alignment_status = "unavailable"
         except Exception:
+            logger.exception("Learner alignment failed for %s", session.session_id)
             alignment_status = "error"
 
     reference = AlignmentResult(language=language, transcript="", units=[])
@@ -286,7 +317,7 @@ async def _score_session(
         else:
             wav_path = REFERENCES_DIR / f"{session.reference_id}.wav"
             if wav_path.exists():
-                if aligner is None:
+                if aligner is None or not has_signal:
                     reference_status = "unavailable"
                 else:
                     try:
@@ -297,8 +328,13 @@ async def _score_session(
                     except AlignmentUnavailableError:
                         reference_status = "unavailable"
                     except Exception:
+                        logger.exception("Reference alignment failed for %s", session.session_id)
                         reference_status = "error"
-    pitch_status, learner_pitch, reference_pitch = _pitch_contours(session)
+    if has_signal:
+        pitch_status, learner_pitch, reference_pitch = _pitch_contours(session, pcm)
+    else:
+        pitch_status = "unvoiced" if pcm and PITCH_EXTRACTOR is not None else "unavailable"
+        learner_pitch = reference_pitch = None
     result = score_utterance(
         learner,
         reference,
@@ -321,7 +357,7 @@ async def _score_session(
         "reference_alignment": reference_status,
         "skipped": result.skipped,
         "duration_dtw_distance": result.duration_dtw_distance,
-        "frames_received": session.frame_count,
+        "frames_received": session.frame_count if pcm else 0,
         "utterance_wav": wav_name,
         "endpoint_reason": session.endpoint_reason,
         "vad_backend": session.vad.backend,
@@ -372,7 +408,7 @@ async def _score_session(
 
 
 def _pitch_contours(
-    session: UtteranceSession,
+    session: UtteranceSession, pcm: bytes,
 ) -> tuple[str, PitchContour | None, PitchContour | None]:
     """F0 contours for the learner and the session's reference.
 
@@ -383,7 +419,7 @@ def _pitch_contours(
     if extractor is None:
         return "unavailable", None, None
     try:
-        learner_pitch = extractor.extract(session.pcm)
+        learner_pitch = extractor.extract(pcm)
         reference_pitch = None
         if session.reference_id:
             reference_pitch = REFERENCE_STORE.pitch_contour(
@@ -394,6 +430,7 @@ def _pitch_contours(
     except PitchUnavailableError:
         return "unavailable", None, None
     except Exception:
+        logger.exception("Pitch extraction failed for %s", session.session_id)
         return "error", None, None
     if reference_pitch is None:
         return "missing", learner_pitch, None

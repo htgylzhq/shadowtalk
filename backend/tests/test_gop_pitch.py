@@ -367,6 +367,23 @@ def test_ws_pitch_unavailable_by_default(monkeypatch):
     assert score["scores"] == []
 
 
+def test_ws_digital_silence_is_unvoiced_without_scores(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "ALIGNER", PosteriorFakeAligner())
+    monkeypatch.setattr(main, "PITCH_EXTRACTOR", CountingPitchExtractor())
+    monkeypatch.setattr(main, "SESSIONS_DIR", tmp_path)
+    with client.websocket_connect("/ws/align") as ws:
+        ws.send_json({"type": "start", "language": "en"})
+        assert ws.receive_json()["type"] == "ready"
+        ws.send_bytes(bytes(10 * main.PCM_FRAME_BYTES))
+        ws.send_json({"type": "end"})
+        assert ws.receive_json()["speech_ms"] == 0
+        score = ws.receive_json()
+    assert score["frames_received"] > 0
+    assert score["pitch"] == "unvoiced"
+    assert score["scores"] == []
+    assert "pitch_contour" not in score
+
+
 def test_ws_pitch_contour_preserves_unvoiced_gaps(monkeypatch):
     class GapPitchExtractor:
         def extract(self, pcm16k):
