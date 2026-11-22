@@ -34,7 +34,7 @@ final class RecorderViewModel: ObservableObject {
         error = nil
         phase = .preparing
         guard await AVAudioApplication.requestRecordPermission() else {
-            fail("Microphone access is off. Allow it in Settings or view a sample score.")
+            fail("Microphone access is off. Enable it for ShadowTalk in Settings, or view a sample score.")
             return
         }
 
@@ -59,13 +59,28 @@ final class RecorderViewModel: ObservableObject {
         frames = stream.continuation
         phase = .recording
         isReady = false
+        setTimeout(.seconds(8)) { [weak self] in
+            guard let self, !isReady else { return }
+            if phase == .recording {
+                recordOffline()
+            } else if phase == .scoring {
+                finish()
+                showSample(source: .offlineSample)
+            }
+        }
         scoringTask = Task {
             do {
                 let payload = try await AlignSocket(configuration: configuration).score(
                     frames: stream.stream,
                     onReady: { [weak self] in
                         guard !Task.isCancelled else { return }
-                        self?.isReady = true
+                        guard let self else { return }
+                        isReady = true
+                        if phase == .scoring {
+                            startScoreTimeout()
+                        } else {
+                            timeoutTask?.cancel()
+                        }
                     },
                     onEndpoint: { [weak self] in
                         guard !Task.isCancelled else { return }
@@ -73,14 +88,24 @@ final class RecorderViewModel: ObservableObject {
                     }
                 )
                 guard !Task.isCancelled else { return }
+                if payload.emptyRecording {
+                    fail("No audio was captured. Tap Record and speak before stopping.")
+                    return
+                }
                 finish()
                 report = ScoreReport(payload: payload, source: .recording)
             } catch {
                 guard !Task.isCancelled else { return }
                 if error is AlignSocket.ProtocolError {
                     fail("The scoring server didn’t return a valid result.")
+                } else if isReady {
+                    if (error as? URLError)?.code == .timedOut {
+                        fail("The scoring server took too long to respond. Try again.")
+                    } else {
+                        fail("The connection to the scoring server was lost. Record again.")
+                    }
                 } else if phase.isRecording {
-                    phase = .recordingOffline
+                    recordOffline()
                 } else {
                     finish()
                     showSample(source: .offlineSample)
@@ -102,17 +127,31 @@ final class RecorderViewModel: ObservableObject {
         }
         stopCapture(sendEnd: sendEnd)
         phase = .scoring
+        if isReady { startScoreTimeout() }
+    }
+
+    private func startScoreTimeout() {
+        setTimeout(.seconds(30)) { [weak self] in
+            self?.fail("The scoring server took too long to respond. Try again.")
+        }
+    }
+
+    private func setTimeout(_ duration: Duration, action: @escaping @MainActor () -> Void) {
+        timeoutTask?.cancel()
         timeoutTask = Task {
             do {
-                try await Task.sleep(for: .seconds(30))
+                try await Task.sleep(for: duration)
             } catch { return }
-            if isReady {
-                fail("The scoring server took too long to respond. Try again.")
-            } else {
-                finish()
-                showSample(source: .offlineSample)
-            }
+            action()
         }
+    }
+
+    private func recordOffline() {
+        scoringTask?.cancel()
+        scoringTask = nil
+        timeoutTask?.cancel()
+        frames?.finish()
+        phase = .recordingOffline
     }
 
     func showSample(source: ScoreReport.Source = .sample) {

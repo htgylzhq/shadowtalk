@@ -19,9 +19,7 @@ struct ScoreView: View {
 
             Section("Pronunciation") {
                 if report.payload.scores.isEmpty {
-                    Text(report.payload.alignment == "unavailable"
-                         ? "The server’s speech aligner is unavailable."
-                         : "No pronunciation units were scored for this recording.")
+                    Text(report.payload.missingPronunciationMessage)
                         .foregroundStyle(.secondary)
                 }
                 ForEach(Array(report.payload.scores.enumerated()), id: \.offset) { _, score in
